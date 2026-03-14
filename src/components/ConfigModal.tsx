@@ -1,0 +1,218 @@
+import { useState } from 'react';
+import { X, Settings, AlertCircle } from 'lucide-react';
+import type { AgentConfig, AgentPersonality, ApiType } from '../types';
+import { GENTLE_SYSTEM_PROMPT, ANGRY_SYSTEM_PROMPT, validateConfig } from '../agents/AgentConfig';
+
+interface ConfigModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  gentleConfig: AgentConfig;
+  angryConfig: AgentConfig;
+  onUpdateGentle: (updates: Partial<AgentConfig>) => void;
+  onUpdateAngry: (updates: Partial<AgentConfig>) => void;
+}
+
+type TabType = 'gentle' | 'angry';
+
+function ConfigForm({
+  config,
+  onUpdate,
+  label,
+}: {
+  config: AgentConfig;
+  onUpdate: (updates: Partial<AgentConfig>) => void;
+  label: string;
+}) {
+  const error = validateConfig(config);
+
+  return (
+    <div className="space-y-4">
+      {error && (
+        <div className="flex items-center gap-2 p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-yellow-700 text-sm">
+          <AlertCircle className="w-4 h-4" />
+          {error}
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <label className="text-sm font-medium text-gray-700">API 类型</label>
+          <select
+            value={config.apiType}
+            onChange={(e) => onUpdate({ apiType: e.target.value as ApiType })}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+          >
+            <option value="openai">OpenAI 格式</option>
+            <option value="anthropic">Anthropic 原生</option>
+          </select>
+        </div>
+
+        <div className="space-y-2">
+          <label className="text-sm font-medium text-gray-700">模型名称</label>
+          <input
+            type="text"
+            value={config.model}
+            onChange={(e) => onUpdate({ model: e.target.value })}
+            placeholder="gpt-4o / claude-3-sonnet-20240229"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+          />
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        <label className="text-sm font-medium text-gray-700">Base URL</label>
+        <input
+          type="text"
+          value={config.baseURL}
+          onChange={(e) => onUpdate({ baseURL: e.target.value })}
+          placeholder="https://api.openai.com"
+          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+        />
+      </div>
+
+      <div className="space-y-2">
+        <label className="text-sm font-medium text-gray-700">API Key</label>
+        <input
+          type="password"
+          value={config.apiKey}
+          onChange={(e) => onUpdate({ apiKey: e.target.value })}
+          placeholder="sk-..."
+          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+        />
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <label className="text-sm font-medium text-gray-700">
+            Temperature: {config.temperature}
+          </label>
+          <input
+            type="range"
+            min="0"
+            max="2"
+            step="0.1"
+            value={config.temperature}
+            onChange={(e) => onUpdate({ temperature: parseFloat(e.target.value) })}
+            className="w-full"
+          />
+        </div>
+
+        <div className="space-y-2">
+          <label className="text-sm font-medium text-gray-700">
+            最大轮数: {config.maxRounds}
+          </label>
+          <input
+            type="range"
+            min="1"
+            max="5"
+            step="1"
+            value={config.maxRounds}
+            onChange={(e) => onUpdate({ maxRounds: parseInt(e.target.value) })}
+            className="w-full"
+          />
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        <label className="text-sm font-medium text-gray-700">系统提示词</label>
+        <textarea
+          value={config.systemPrompt}
+          onChange={(e) => onUpdate({ systemPrompt: e.target.value })}
+          rows={6}
+          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-mono text-sm"
+        />
+        <button
+          onClick={() =>
+            onUpdate({
+              systemPrompt:
+                config.personality === 'gentle'
+                  ? GENTLE_SYSTEM_PROMPT
+                  : ANGRY_SYSTEM_PROMPT,
+            })
+          }
+          className="text-sm text-blue-600 hover:text-blue-700"
+        >
+          恢复默认提示词
+        </button>
+      </div>
+    </div>
+  );
+}
+
+export function ConfigModal({
+  isOpen,
+  onClose,
+  gentleConfig,
+  angryConfig,
+  onUpdateGentle,
+  onUpdateAngry,
+}: ConfigModalProps) {
+  const [activeTab, setActiveTab] = useState<TabType>('gentle');
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+      <div className="w-full max-w-2xl max-h-[90vh] bg-white rounded-2xl shadow-2xl overflow-hidden animate-fade-in">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+          <div className="flex items-center gap-2">
+            <Settings className="w-5 h-5 text-gray-600" />
+            <h2 className="text-lg font-semibold text-gray-900">Agent 配置</h2>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="flex border-b border-gray-200">
+          <button
+            onClick={() => setActiveTab('gentle')}
+            className={`flex-1 px-6 py-3 text-sm font-medium transition-colors ${
+              activeTab === 'gentle'
+                ? 'text-amber-600 border-b-2 border-amber-500 bg-amber-50/50'
+                : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50'
+            }`}
+          >
+            <span className="flex items-center justify-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+              温和 Agent
+            </span>
+          </button>
+          <button
+            onClick={() => setActiveTab('angry')}
+            className={`flex-1 px-6 py-3 text-sm font-medium transition-colors ${
+              activeTab === 'angry'
+                ? 'text-rose-600 border-b-2 border-rose-500 bg-rose-50/50'
+                : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50'
+            }`}
+          >
+            <span className="flex items-center justify-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-rose-500"></span>
+              暴躁 Agent
+            </span>
+          </button>
+        </div>
+
+        <div className="p-6 overflow-y-auto max-h-[60vh]">
+          {activeTab === 'gentle' ? (
+            <ConfigForm config={gentleConfig} onUpdate={onUpdateGentle} label="温和 Agent" />
+          ) : (
+            <ConfigForm config={angryConfig} onUpdate={onUpdateAngry} label="暴躁 Agent" />
+          )}
+        </div>
+
+        <div className="flex justify-end gap-3 px-6 py-4 border-t border-gray-200 bg-gray-50">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+          >
+            关闭
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
