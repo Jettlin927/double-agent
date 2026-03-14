@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState } from 'react';
-import { AgentTeam, StreamCallback } from '../agents/AgentTeam';
+import { AgentTeam } from '../agents/AgentTeam';
+import type { StreamCallback } from '../agents/AgentTeam';
 import type { AgentConfig, StreamChunk } from '../types';
 
 interface UseAgentTeamOptions {
