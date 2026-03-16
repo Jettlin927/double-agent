@@ -1,121 +1,145 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback } from 'react';
 import { Header } from './components/Header';
 import { AgentPanel } from './components/AgentPanel';
 import { UserInput } from './components/UserInput';
 import { ConfigModal } from './components/ConfigModal';
+import { Sidebar } from './components/Sidebar';
 import { useAgentStore } from './stores/agentStore';
 import { useAgentTeam } from './hooks/useAgentTeam';
 import { validateConfig } from './agents/AgentConfig';
-import type { ChatMessage, AgentPersonality } from './types';
+import type { ChatMessage } from './types';
 
 function App() {
   const [configOpen, setConfigOpen] = useState(false);
-  const [userMessages, setUserMessages] = useState<ChatMessage[]>([]);
-  const [agentMessages, setAgentMessages] = useState<Record<string, ChatMessage[]>>({
-    'gentle-agent': [],
-    'angry-agent': [],
-  });
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const { gentleConfig, angryConfig, updateConfig } = useAgentStore();
 
-  const handleChunk = useCallback((agentId: string, chunk: { content?: string; done?: boolean }) => {
-    if (chunk.done) {
-      // Finalize the message when done
-      setAgentMessages((prev) => ({
-        ...prev,
-        [agentId]: [
-          ...(prev[agentId] || []),
-          {
-            id: `${agentId}-${Date.now()}`,
-            role: 'assistant',
-            content: chunk.content || '',
-            agentId,
-            timestamp: Date.now(),
-          },
-        ],
-      }));
-    }
-  }, []);
-
-  const { isRunning, error, gentleStream, angryStream, runDebate, stopDebate } = useAgentTeam({
+  const {
+    isRunning,
+    error,
+    gentleStream,
+    angryStream,
+    currentSession,
+    sessions,
+    runDebate,
+    loadSession,
+    createNewSession,
+    deleteSession,
+    stopDebate,
+  } = useAgentTeam({
     gentleConfig,
     angryConfig,
   });
 
-  const isConfigured = useMemo(() => {
-    return !validateConfig(gentleConfig) && !validateConfig(angryConfig);
-  }, [gentleConfig, angryConfig]);
+  const isConfigured = !validateConfig(gentleConfig) && !validateConfig(angryConfig);
+
+  // Build messages from current session
+  const buildMessages = useCallback((agentId: string): ChatMessage[] => {
+    const messages: ChatMessage[] = [];
+
+    if (currentSession) {
+      // Add user question as first message
+      messages.push({
+        id: `user-${currentSession.createdAt}`,
+        role: 'user',
+        content: currentSession.userQuestion,
+        timestamp: currentSession.createdAt,
+      });
+
+      // Add all rounds
+      currentSession.rounds.forEach((round) => {
+        if (agentId === gentleConfig.id) {
+          messages.push(round.gentleResponse);
+        } else {
+          messages.push(round.angryResponse);
+        }
+      });
+    }
+
+    return messages;
+  }, [currentSession, gentleConfig.id]);
 
   const handleSend = useCallback(
     async (question: string) => {
-      // Add user message
-      const userMessage: ChatMessage = {
-        id: `user-${Date.now()}`,
-        role: 'user',
-        content: question,
-        timestamp: Date.now(),
-      };
-      setUserMessages((prev) => [...prev, userMessage]);
-
-      // Clear previous agent messages
-      setAgentMessages({
-        'gentle-agent': [],
-        'angry-agent': [],
-      });
-
-      // Start debate
+      if (currentSession) {
+        // If there's a current session, create a new one
+        createNewSession();
+      }
       await runDebate(question);
     },
-    [runDebate]
+    [currentSession, createNewSession, runDebate]
   );
 
-  const handleUpdateConfig = (personality: AgentPersonality, updates: Parameters<typeof updateConfig>[1]) => {
+  const handleUpdateConfig = (personality: 'gentle' | 'angry', updates: Partial<typeof gentleConfig>) => {
     updateConfig(personality, updates);
   };
 
+  // Check if we have an active session or streaming content
+  const hasActiveContent = currentSession || gentleStream || angryStream;
+
   return (
     <div className="h-screen flex flex-col bg-gray-50">
-      <Header onOpenConfig={() => setConfigOpen(true)} />
+      <div className="flex flex-1 overflow-hidden">
+        {/* Sidebar */}
+        <Sidebar
+          sessions={sessions}
+          currentSession={currentSession}
+          onNewSession={createNewSession}
+          onLoadSession={loadSession}
+          onDeleteSession={deleteSession}
+          isOpen={sidebarOpen}
+          onClose={() => setSidebarOpen(false)}
+        />
 
-      {/* Main content - split view */}
-      <div className="flex-1 flex overflow-hidden">
-        {/* Left panel - Gentle Agent */}
-        <div className="flex-1 border-r border-gray-200">
-          <AgentPanel
-            config={gentleConfig}
-            stream={gentleStream}
-            isRunning={isRunning}
-            messages={[...userMessages, ...(agentMessages['gentle-agent'] || [])]}
-            side="left"
+        {/* Main content */}
+        <div className="flex-1 flex flex-col min-w-0">
+          <Header
+            onOpenConfig={() => setConfigOpen(true)}
+            onToggleSidebar={() => setSidebarOpen(true)}
           />
-        </div>
 
-        {/* Right panel - Angry Agent */}
-        <div className="flex-1">
-          <AgentPanel
-            config={angryConfig}
-            stream={angryStream}
+          {/* Main content - split view */}
+          <div className="flex-1 flex overflow-hidden">
+            {/* Left panel - Gentle Agent */}
+            <div className="flex-1 border-r border-gray-200">
+              <AgentPanel
+                config={gentleConfig}
+                stream={gentleStream}
+                isRunning={isRunning}
+                messages={buildMessages(gentleConfig.id)}
+                side="left"
+              />
+            </div>
+
+            {/* Right panel - Angry Agent */}
+            <div className="flex-1">
+              <AgentPanel
+                config={angryConfig}
+                stream={angryStream}
+                isRunning={isRunning}
+                messages={buildMessages(angryConfig.id)}
+                side="right"
+              />
+            </div>
+          </div>
+
+          {/* Error display */}
+          {error && (
+            <div className="bg-red-50 border-t border-red-200 px-6 py-3">
+              <p className="text-sm text-red-600 text-center">{error}</p>
+            </div>
+          )}
+
+          {/* User input */}
+          <UserInput
+            onSend={handleSend}
+            onStop={stopDebate}
             isRunning={isRunning}
-            messages={[...userMessages, ...(agentMessages['angry-agent'] || [])]}
-            side="right"
+            disabled={!isConfigured}
           />
         </div>
       </div>
-
-      {/* Error display */}
-      {error && (
-        <div className="bg-red-50 border-t border-red-200 px-6 py-3">
-          <p className="text-sm text-red-600 text-center">{error}</p>
-        </div>
-      )}
-
-      {/* User input */}
-      <UserInput
-        onSend={handleSend}
-        onStop={stopDebate}
-        isRunning={isRunning}
-        disabled={!isConfigured}
-      />
 
       {/* Config modal */}
       <ConfigModal

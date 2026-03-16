@@ -1,7 +1,8 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useRef, useState, useEffect } from 'react';
 import { AgentTeam } from '../agents/AgentTeam';
 import type { StreamCallback } from '../agents/AgentTeam';
-import type { AgentConfig, StreamChunk } from '../types';
+import type { AgentConfig, StreamChunk, DebateSession, DebateRound } from '../types';
+import { debateStorage } from '../stores/debateStorage';
 
 interface UseAgentTeamOptions {
   gentleConfig: AgentConfig;
@@ -13,7 +14,12 @@ interface UseAgentTeamReturn {
   error: string | null;
   gentleStream: StreamChunk | null;
   angryStream: StreamChunk | null;
+  currentSession: DebateSession | null;
+  sessions: DebateSession[];
   runDebate: (question: string) => Promise<void>;
+  loadSession: (sessionId: string) => void;
+  createNewSession: () => void;
+  deleteSession: (sessionId: string) => void;
   stopDebate: () => void;
   reset: () => void;
 }
@@ -23,16 +29,33 @@ export function useAgentTeam(options: UseAgentTeamOptions): UseAgentTeamReturn {
   const [error, setError] = useState<string | null>(null);
   const [gentleStream, setGentleStream] = useState<StreamChunk | null>(null);
   const [angryStream, setAngryStream] = useState<StreamChunk | null>(null);
+  const [currentSession, setCurrentSession] = useState<DebateSession | null>(null);
+  const [sessions, setSessions] = useState<DebateSession[]>([]);
 
   const agentTeamRef = useRef<AgentTeam | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  // Initialize or update AgentTeam when configs change
+  // Initialize AgentTeam
   if (!agentTeamRef.current) {
     agentTeamRef.current = new AgentTeam(options.gentleConfig, options.angryConfig);
   } else {
     agentTeamRef.current.updateConfigs(options.gentleConfig, options.angryConfig);
   }
+
+  // Load sessions list
+  const refreshSessions = useCallback(() => {
+    setSessions(debateStorage.getAllSessions());
+  }, []);
+
+  // Initial load
+  useEffect(() => {
+    refreshSessions();
+    const current = debateStorage.getCurrentSession();
+    if (current) {
+      setCurrentSession(current);
+      agentTeamRef.current?.loadSession(current);
+    }
+  }, [refreshSessions]);
 
   const handleChunk: StreamCallback = useCallback((agentId: string, chunk: StreamChunk) => {
     if (agentId === options.gentleConfig.id) {
@@ -68,6 +91,10 @@ export function useAgentTeam(options: UseAgentTeamOptions): UseAgentTeamReturn {
         handleChunk,
         abortControllerRef.current.signal
       );
+      // Update current session after debate
+      const session = debateStorage.getCurrentSession();
+      setCurrentSession(session || null);
+      refreshSessions();
     } catch (err) {
       if (err instanceof Error && err.name !== 'AbortError') {
         setError(err.message);
@@ -75,7 +102,37 @@ export function useAgentTeam(options: UseAgentTeamOptions): UseAgentTeamReturn {
     } finally {
       setIsRunning(false);
     }
-  }, [handleChunk]);
+  }, [handleChunk, refreshSessions]);
+
+  const loadSession = useCallback((sessionId: string) => {
+    const session = debateStorage.getSession(sessionId);
+    if (session) {
+      debateStorage.setCurrentSession(sessionId);
+      agentTeamRef.current?.loadSession(session);
+      setCurrentSession(session);
+      // Clear streams when loading a session
+      setGentleStream(null);
+      setAngryStream(null);
+      setError(null);
+    }
+  }, []);
+
+  const createNewSession = useCallback(() => {
+    agentTeamRef.current?.reset();
+    setCurrentSession(null);
+    setGentleStream(null);
+    setAngryStream(null);
+    setError(null);
+    debateStorage.setCurrentSession('');
+  }, []);
+
+  const deleteSession = useCallback((sessionId: string) => {
+    debateStorage.deleteSession(sessionId);
+    refreshSessions();
+    if (currentSession?.id === sessionId) {
+      createNewSession();
+    }
+  }, [currentSession, createNewSession, refreshSessions]);
 
   const stopDebate = useCallback(() => {
     abortControllerRef.current?.abort();
@@ -95,7 +152,12 @@ export function useAgentTeam(options: UseAgentTeamOptions): UseAgentTeamReturn {
     error,
     gentleStream,
     angryStream,
+    currentSession,
+    sessions,
     runDebate,
+    loadSession,
+    createNewSession,
+    deleteSession,
     stopDebate,
     reset,
   };
