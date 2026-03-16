@@ -202,15 +202,37 @@ export const ANGRY_ROLES: RoleDefinition[] = [
 ];
 
 // 单Agent模式的结束判断提示
-export const SINGLE_AGENT_ENDING_PROMPT = `请判断当前对话是否已经可以结束。考虑：
+// 单Agent模式的结束判断提示
+export const SINGLE_AGENT_ENDING_PROMPT = `[SYSTEM: 对话结束判断]
+请严格判断当前对话是否应该结束。考虑：
 1. 用户的问题是否得到了充分回答
 2. 对话是否已经达到了自然的收尾点
 3. 是否还有重要的信息需要补充
 
-如果认为对话可以结束，请回复："[END]"
-如果认为还需要继续对话，请回复："[CONTINUE]"
+**重要规则**：
+- 如果对话可以结束，必须只回复：[END]
+- 如果对话需要继续，必须只回复：[CONTINUE]
+- 不要添加任何其他文字、解释或格式
+- 只能使用上述两个标记之一
 
-只回复上述标记之一，不要添加其他内容。`;
+你的回复（必须是 [END] 或 [CONTINUE]）：`;
+
+// 辩论模式的结束判断提示
+export const DEBATE_ENDING_PROMPT = `[SYSTEM: 辩论结束判断]
+请严格判断当前辩论对话是否应该结束。考虑：
+1. 双方的论点是否已经充分表达
+2. 是否已经达到了共识或清晰的结论
+3. 是否还有新的观点或反驳需要提出
+4. 辩论是否已经开始重复之前的观点
+
+**重要规则**：
+- 如果辩论可以结束，必须只回复：[END]
+- 如果辩论需要继续，必须只回复：[CONTINUE]
+- 不要添加任何其他文字、解释或格式
+- 只能使用上述两个标记之一
+- 保守判断：如果仍有有价值的观点可补充，选择 [CONTINUE]
+
+你的回复（必须是 [END] 或 [CONTINUE]）：`;
 
 // 获取所有角色
 export function getAllRoles(): RoleDefinition[] {
@@ -232,11 +254,7 @@ export function getDefaultRole(personality: AgentPersonality): RoleDefinition {
   return personality === 'gentle' ? GENTLE_ROLES[0] : ANGRY_ROLES[0];
 }
 
-// 获取角色的结束判断提示
-export function getEndingPrompt(roleId: string, isSingleMode: boolean = false): string {
-  if (isSingleMode) {
-    return SINGLE_AGENT_ENDING_PROMPT;
-  }
-  const role = getRoleById(roleId);
-  return role?.endingPrompt || SINGLE_AGENT_ENDING_PROMPT;
+// 获取结束判断提示
+export function getEndingPrompt(isSingleMode: boolean = false): string {
+  return isSingleMode ? SINGLE_AGENT_ENDING_PROMPT : DEBATE_ENDING_PROMPT;
 }

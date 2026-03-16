@@ -291,7 +291,7 @@ export class AgentTeam {
     signal?: AbortSignal
   ): Promise<EndingCheckResult> {
     // 获取角色的结束判断提示
-    const endingPrompt = getEndingPrompt(config.systemPrompt, isSingleMode);
+    const endingPrompt = getEndingPrompt(isSingleMode);
 
     const checkMessages: Message[] = [
       ...conversationHistory,
@@ -299,17 +299,42 @@ export class AgentTeam {
     ];
 
     try {
-      const response = await this.request(config, checkMessages, signal);
+      // 使用 temperature=0 确保确定性输出
+      const endingCheckConfig = { ...config, temperature: 0 };
+      const response = await this.request(endingCheckConfig, checkMessages, signal);
       const content = response.trim();
 
-      // 解析结果
-      if (content.includes('[END]')) {
+      console.log('[EndingCheck] 原始响应:', content.substring(0, 200));
+
+      // 解析结果 - 严格匹配
+      const endMatch = content.match(/\[END\]/i);
+      const continueMatch = content.match(/\[CONTINUE\]/i);
+
+      if (endMatch) {
+        console.log('[EndingCheck] 判断结果: 应该结束');
         return { shouldEnd: true, reason: content };
       }
 
+      if (continueMatch) {
+        console.log('[EndingCheck] 判断结果: 继续对话');
+        return { shouldEnd: false, reason: content };
+      }
+
+      // 如果没有明确标记，根据内容推断
+      // 如果响应很短（小于50字符）且不包含继续相关的词，可能想结束
+      const lowerContent = content.toLowerCase();
+      const hasContinueWords = /继续|还有更多|还没说完|接着|补充/i.test(lowerContent);
+      const hasEndWords = /结束|完成|够了|到此为止|over|done/i.test(lowerContent);
+
+      if (hasEndWords && !hasContinueWords && content.length < 100) {
+        console.log('[EndingCheck] 推断结果: 应该结束（关键词匹配）');
+        return { shouldEnd: true, reason: content };
+      }
+
+      console.log('[EndingCheck] 推断结果: 继续对话（无明确标记）');
       return { shouldEnd: false, reason: content };
     } catch (error) {
-      console.error('结束判断失败:', error);
+      console.error('[EndingCheck] 结束判断失败:', error);
       // 出错时默认继续，但超过安全上限会停止
       return { shouldEnd: false };
     }
