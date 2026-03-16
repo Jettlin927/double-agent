@@ -548,11 +548,6 @@ export class AgentTeam {
           break;
         }
       }
-
-        if (shouldEnd) {
-          break;
-        }
-      }
     }
 
     // 如果达到最大轮数，强制结束
