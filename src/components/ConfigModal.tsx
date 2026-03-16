@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { X, Settings, AlertCircle, ChevronDown, User, Bot, Sparkles, Zap } from 'lucide-react';
+import { X, Settings, AlertCircle, ChevronDown, User, Bot, Sparkles, Zap, Download, FileCode } from 'lucide-react';
 import type { AgentConfig, AgentPersonality, ApiType } from '../types';
 import { GENTLE_SYSTEM_PROMPT, ANGRY_SYSTEM_PROMPT, validateConfig } from '../agents/AgentConfig';
 import {
@@ -10,6 +10,7 @@ import {
   type RoleDefinition,
   type ModelPreset,
 } from '../prompts';
+import { exportToEnv, downloadEnvFile, hasEnvConfig } from '../stores';
 
 interface ConfigModalProps {
   isOpen: boolean;
@@ -322,6 +323,12 @@ export function ConfigModal({
   onUpdateAngry,
 }: ConfigModalProps) {
   const [activeTab, setActiveTab] = useState<TabType>('gentle');
+  const usingEnvConfig = hasEnvConfig();
+
+  const handleExportEnv = () => {
+    const envContent = exportToEnv(gentleConfig, angryConfig);
+    downloadEnvFile(envContent, '.env.local');
+  };
 
   if (!isOpen) return null;
 
@@ -378,7 +385,26 @@ export function ConfigModal({
           )}
         </div>
 
-        <div className="flex justify-end gap-3 px-6 py-4 border-t border-gray-200 bg-gray-50">
+        <div className="flex items-center justify-between px-6 py-4 border-t border-gray-200 bg-gray-50">
+          {/* Left side: Env config indicator and export */}
+          <div className="flex items-center gap-3">
+            {usingEnvConfig ? (
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-green-100 text-green-700 rounded-lg text-sm">
+                <FileCode className="w-4 h-4" />
+                已加载 .env.local 配置
+              </div>
+            ) : (
+              <button
+                onClick={handleExportEnv}
+                className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors"
+              >
+                <Download className="w-4 h-4" />
+                导出配置为 .env
+              </button>
+            )}
+          </div>
+
+          {/* Right side: Close button */}
           <button
             onClick={onClose}
             className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
