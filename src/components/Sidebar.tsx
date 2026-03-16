@@ -1,14 +1,16 @@
 import { useState } from 'react';
-import { Plus, Trash2, MessageSquare, Clock, Download, Upload, X } from 'lucide-react';
-import type { DebateSession } from '../types';
+import { Plus, Trash2, MessageSquare, Clock, Download, Upload, X, Users, User, Sparkles, Bot } from 'lucide-react';
+import type { DebateSession, AgentMode } from '../types';
 import { debateStorage } from '../stores/debateStorage';
 
 interface SidebarProps {
   sessions: DebateSession[];
   currentSession: DebateSession | null;
+  mode: AgentMode;
   onNewSession: () => void;
   onLoadSession: (sessionId: string) => void;
   onDeleteSession: (sessionId: string) => void;
+  onModeChange: (mode: AgentMode) => void;
   isOpen: boolean;
   onClose: () => void;
 }
@@ -16,9 +18,11 @@ interface SidebarProps {
 export function Sidebar({
   sessions,
   currentSession,
+  mode,
   onNewSession,
   onLoadSession,
   onDeleteSession,
+  onModeChange,
   isOpen,
   onClose,
 }: SidebarProps) {
@@ -78,6 +82,23 @@ export function Sidebar({
     });
   };
 
+  const getModeBadge = (sessionMode?: AgentMode) => {
+    if (sessionMode === 'single') {
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs bg-blue-100 text-blue-700 rounded-full">
+          <User className="w-3 h-3" />
+          单Agent
+        </span>
+      );
+    }
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs bg-purple-100 text-purple-700 rounded-full">
+        <Users className="w-3 h-3" />
+        双Agent
+      </span>
+    );
+  };
+
   return (
     <>
       {/* Overlay for mobile */}
@@ -106,13 +127,52 @@ export function Sidebar({
             </button>
           </div>
 
+          {/* New Session Button */}
           <button
             onClick={onNewSession}
-            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors"
+            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors mb-3"
           >
             <Plus className="w-4 h-4" />
             新对话
           </button>
+
+          {/* Mode Toggle Button */}
+          <button
+            onClick={() => onModeChange(mode === 'double' ? 'single' : 'double')}
+            className={`w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg font-medium transition-colors ${
+              mode === 'double'
+                ? 'bg-purple-100 text-purple-700 hover:bg-purple-200'
+                : 'bg-blue-100 text-blue-700 hover:bg-blue-200'
+            }`}
+          >
+            {mode === 'double' ? (
+              <>
+                <Users className="w-4 h-4" />
+                切换为单Agent
+              </>
+            ) : (
+              <>
+                <Sparkles className="w-4 h-4" />
+                切换为双Agent
+              </>
+            )}
+          </button>
+
+          {/* Current Mode Indicator */}
+          <div className="mt-3 flex items-center justify-center gap-2 text-xs text-gray-500">
+            <span>当前模式:</span>
+            {mode === 'double' ? (
+              <span className="flex items-center gap-1 text-purple-600 font-medium">
+                <Bot className="w-3.5 h-3.5" />
+                双Agent辩论
+              </span>
+            ) : (
+              <span className="flex items-center gap-1 text-blue-600 font-medium">
+                <User className="w-3.5 h-3.5" />
+                单Agent对话
+              </span>
+            )}
+          </div>
         </div>
 
         {/* Session List */}
@@ -142,13 +202,22 @@ export function Sidebar({
                         : 'bg-gray-100 text-gray-500'
                     }`}
                   >
-                    <MessageSquare className="w-4 h-4" />
+                    {session.mode === 'single' ? (
+                      <User className="w-4 h-4" />
+                    ) : (
+                      <Users className="w-4 h-4" />
+                    )}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <h3 className="text-sm font-medium text-gray-900 truncate">
-                      {session.title || '未命名对话'}
-                    </h3>
-                    <div className="flex items-center gap-2 mt-1 text-xs text-gray-500">
+                    <div className="flex items-center gap-2 mb-1">
+                      <h3 className="text-sm font-medium text-gray-900 truncate">
+                        {session.title || '未命名对话'}
+                      </h3>
+                    </div>
+                    <div className="flex items-center gap-2 mb-1">
+                      {getModeBadge(session.mode)}
+                    </div>
+                    <div className="flex items-center gap-2 text-xs text-gray-500">
                       <Clock className="w-3 h-3" />
                       {formatDate(session.updatedAt)}
                       <span className="text-gray-300">|</span>

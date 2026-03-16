@@ -8,6 +8,7 @@ import { useAgentStore } from './stores/agentStore';
 import { useAgentTeam } from './hooks/useAgentTeam';
 import { validateConfig } from './agents/AgentConfig';
 import type { ChatMessage } from './types';
+import { Bot, User } from 'lucide-react';
 
 function App() {
   const [configOpen, setConfigOpen] = useState(false);
@@ -22,6 +23,8 @@ function App() {
     angryStream,
     currentSession,
     sessions,
+    mode,
+    setMode,
     runDebate,
     loadSession,
     createNewSession,
@@ -75,8 +78,11 @@ function App() {
     updateConfig(personality, updates);
   };
 
-  // Check if we have an active session or streaming content
-  const hasActiveContent = currentSession || gentleStream || angryStream;
+  const handleModeChange = (newMode: 'single' | 'double') => {
+    setMode(newMode);
+    // 切换模式时重置当前会话
+    createNewSession();
+  };
 
   return (
     <div className="h-screen flex flex-col bg-gray-50">
@@ -85,9 +91,11 @@ function App() {
         <Sidebar
           sessions={sessions}
           currentSession={currentSession}
+          mode={mode}
           onNewSession={createNewSession}
           onLoadSession={loadSession}
           onDeleteSession={deleteSession}
+          onModeChange={handleModeChange}
           isOpen={sidebarOpen}
           onClose={() => setSidebarOpen(false)}
         />
@@ -99,29 +107,64 @@ function App() {
             onToggleSidebar={() => setSidebarOpen(true)}
           />
 
-          {/* Main content - split view */}
+          {/* Main content - view based on mode */}
           <div className="flex-1 flex overflow-hidden">
-            {/* Left panel - Gentle Agent */}
-            <div className="flex-1 border-r border-gray-200">
-              <AgentPanel
-                config={gentleConfig}
-                stream={gentleStream}
-                isRunning={isRunning}
-                messages={buildMessages(gentleConfig.id)}
-                side="left"
-              />
-            </div>
+            {mode === 'single' ? (
+              // 单Agent模式 - 只显示左侧，居中
+              <div className="flex-1 flex justify-center">
+                <div className="w-full max-w-3xl border-x border-gray-200">
+                  <AgentPanel
+                    config={gentleConfig}
+                    stream={gentleStream}
+                    isRunning={isRunning}
+                    messages={buildMessages(gentleConfig.id)}
+                    side="left"
+                  />
+                </div>
+              </div>
+            ) : (
+              // 双Agent模式 - 左右分栏
+              <>
+                {/* Left panel - Gentle Agent */}
+                <div className="flex-1 border-r border-gray-200">
+                  <AgentPanel
+                    config={gentleConfig}
+                    stream={gentleStream}
+                    isRunning={isRunning}
+                    messages={buildMessages(gentleConfig.id)}
+                    side="left"
+                  />
+                </div>
 
-            {/* Right panel - Angry Agent */}
-            <div className="flex-1">
-              <AgentPanel
-                config={angryConfig}
-                stream={angryStream}
-                isRunning={isRunning}
-                messages={buildMessages(angryConfig.id)}
-                side="right"
-              />
-            </div>
+                {/* Right panel - Angry Agent */}
+                <div className="flex-1">
+                  <AgentPanel
+                    config={angryConfig}
+                    stream={angryStream}
+                    isRunning={isRunning}
+                    messages={buildMessages(angryConfig.id)}
+                    side="right"
+                  />
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Mode indicator */}
+          <div className="bg-white border-t border-gray-200 px-4 py-2 flex items-center justify-center gap-2">
+            {mode === 'single' ? (
+              <>
+                <User className="w-4 h-4 text-blue-600" />
+                <span className="text-sm text-blue-600 font-medium">单Agent模式</span>
+                <span className="text-xs text-gray-400">- 仅使用温和Agent进行对话</span>
+              </>
+            ) : (
+              <>
+                <Bot className="w-4 h-4 text-purple-600" />
+                <span className="text-sm text-purple-600 font-medium">双Agent辩论模式</span>
+                <span className="text-xs text-gray-400">- 温和Agent vs 暴躁Agent</span>
+              </>
+            )}
           </div>
 
           {/* Error display */}

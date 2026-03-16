@@ -36,7 +36,8 @@ export class DebateStorage {
   createSession(
     userQuestion: string,
     gentleConfig: AgentConfig,
-    angryConfig: AgentConfig
+    angryConfig: AgentConfig,
+    mode: 'double' | 'single' = 'double'
   ): DebateSession {
     const session: DebateSession = {
       id: `session-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
@@ -48,6 +49,7 @@ export class DebateStorage {
       maxRounds: Math.min(gentleConfig.maxRounds, angryConfig.maxRounds),
       gentleConfig,
       angryConfig,
+      mode,
     };
 
     this.sessions.set(session.id, session);
@@ -108,6 +110,7 @@ export class DebateStorage {
       userQuestion: session.userQuestion,
       createdAt: session.createdAt,
       maxRounds: session.maxRounds,
+      mode: session.mode,
     }));
 
     // Add each round as a line
@@ -151,6 +154,7 @@ export class DebateStorage {
         maxRounds: metadata.maxRounds || 3,
         gentleConfig: { id: '', name: '温和Agent', personality: 'gentle', apiType: 'openai', baseURL: '', apiKey: '', model: '', systemPrompt: '', temperature: 0.7, maxRounds: 3 },
         angryConfig: { id: '', name: '暴躁Agent', personality: 'angry', apiType: 'openai', baseURL: '', apiKey: '', model: '', systemPrompt: '', temperature: 0.8, maxRounds: 3 },
+        mode: metadata.mode || 'double',
       };
 
       // Parse rounds

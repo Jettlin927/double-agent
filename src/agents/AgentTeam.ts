@@ -1,4 +1,4 @@
-import type { AgentConfig, Message, ChatMessage, DebateRound, StreamChunk, DebateSession } from '../types';
+import type { AgentConfig, Message, ChatMessage, DebateRound, StreamChunk, DebateSession, AgentMode } from '../types';
 import { OpenAIAdapter } from './OpenAIAdapter';
 import { AnthropicAdapter } from './AnthropicAdapter';
 import { debateStorage } from '../stores/debateStorage';
@@ -11,7 +11,8 @@ export class AgentTeam {
   private debateHistory: DebateRound[] = [];
   private currentRound = 0;
   private currentSessionId: string | null = null;
-  private fullMessageHistory: Message[] = []; // 累积完整对话历史
+  private fullMessageHistory: Message[] = [];
+  private mode: AgentMode = 'double';
 
   constructor(gentleConfig: AgentConfig, angryConfig: AgentConfig) {
     this.gentleConfig = gentleConfig;
@@ -28,6 +29,7 @@ export class AgentTeam {
     this.currentRound = 0;
     this.currentSessionId = null;
     this.fullMessageHistory = [];
+    this.mode = 'double';
   }
 
   getDebateHistory(): DebateRound[] {
@@ -38,35 +40,47 @@ export class AgentTeam {
     return this.currentSessionId;
   }
 
+  getMode(): AgentMode {
+    return this.mode;
+  }
+
   // 加载历史会话并恢复上下文
   loadSession(session: DebateSession): Message[] {
     this.reset();
     this.currentSessionId = session.id;
     this.debateHistory = [...session.rounds];
     this.currentRound = session.rounds.length;
+    this.mode = session.mode || 'double';
 
-    // 重建完整消息历史
     const messages: Message[] = [];
 
     if (session.rounds.length > 0) {
-      // 第一轮包含用户问题
       messages.push({ role: 'user', content: session.userQuestion });
 
-      session.rounds.forEach((round, index) => {
-        // Gentle的回复
-        messages.push({
-          role: 'assistant',
-          content: round.gentleResponse.content,
-        });
-
-        // 如果不是最后一轮，添加用户引导下一轮的提示
-        if (index < session.rounds.length - 1) {
+      if (session.mode === 'single') {
+        // 单Agent模式：只有gentleResponse
+        session.rounds.forEach((round) => {
           messages.push({
-            role: 'user',
-            content: `另一位助手回复："${round.angryResponse.content}"\n\n请继续讨论。`,
+            role: 'assistant',
+            content: round.gentleResponse.content,
           });
-        }
-      });
+        });
+      } else {
+        // 双Agent模式：两个Agent都有
+        session.rounds.forEach((round, index) => {
+          messages.push({
+            role: 'assistant',
+            content: round.gentleResponse.content,
+          });
+
+          if (index < session.rounds.length - 1) {
+            messages.push({
+              role: 'user',
+              content: `另一位助手回复："${round.angryResponse.content}"\n\n请继续讨论。`,
+            });
+          }
+        });
+      }
     }
 
     this.fullMessageHistory = messages;
@@ -84,13 +98,11 @@ export class AgentTeam {
     signal?: AbortSignal
   ): Promise<string> {
     const adapter = this.getAdapter(config.apiType);
-    // 智能处理baseURL，避免重复的/v1路径
     let baseURL = config.baseURL.replace(/\/$/, '');
-    const apiPath = adapter.getEndpoint(); // e.g. /v1/chat/completions
+    const apiPath = adapter.getEndpoint();
 
-    // 如果baseURL已经包含/v1，且apiPath也以/v1开头，则去掉baseURL末尾的/v1
     if (baseURL.endsWith('/v1') && apiPath.startsWith('/v1/')) {
-      baseURL = baseURL.slice(0, -3); // 移除末尾的/v1
+      baseURL = baseURL.slice(0, -3);
     }
 
     const endpoint = baseURL + apiPath;
@@ -138,7 +150,6 @@ export class AgentTeam {
         }
       }
 
-      // Process remaining buffer
       if (buffer) {
         const chunk = adapter.parseStream(buffer);
         if (chunk?.content) {
@@ -153,18 +164,78 @@ export class AgentTeam {
     return fullContent;
   }
 
+  // 单Agent对话模式
+  async runSingle(
+    userQuestion: string,
+    onChunk: StreamCallback,
+    signal?: AbortSignal
+  ): Promise<void> {
+    this.reset();
+    this.mode = 'single';
+
+    const session = debateStorage.createSession(
+      userQuestion,
+      this.gentleConfig,
+      this.angryConfig,
+      'single'
+    );
+    this.currentSessionId = session.id;
+
+    this.fullMessageHistory = [
+      { role: 'user', content: userQuestion },
+    ];
+
+    const response = await this.streamResponse(
+      this.gentleConfig,
+      [...this.fullMessageHistory],
+      onChunk,
+      signal
+    );
+
+    const message: ChatMessage = {
+      id: `gentle-${Date.now()}`,
+      role: 'assistant',
+      content: response,
+      agentId: this.gentleConfig.id,
+      timestamp: Date.now(),
+    };
+
+    this.fullMessageHistory.push({
+      role: 'assistant',
+      content: response,
+    });
+
+    // 单Agent模式下，angryResponse为空占位
+    const round: DebateRound = {
+      round: 1,
+      gentleResponse: message,
+      angryResponse: {
+        id: 'empty',
+        role: 'assistant',
+        content: '',
+        timestamp: Date.now(),
+        agentId: 'angry-agent',
+      },
+    };
+
+    this.debateHistory.push(round);
+    debateStorage.addRound(this.currentSessionId, round);
+  }
+
+  // 双Agent辩论模式
   async runDebate(
     userQuestion: string,
     onChunk: StreamCallback,
     signal?: AbortSignal
   ): Promise<void> {
     this.reset();
+    this.mode = 'double';
 
-    // 创建新会话
     const session = debateStorage.createSession(
       userQuestion,
       this.gentleConfig,
-      this.angryConfig
+      this.angryConfig,
+      'double'
     );
     this.currentSessionId = session.id;
 
@@ -173,17 +244,15 @@ export class AgentTeam {
       this.angryConfig.maxRounds
     );
 
-    // 初始化完整消息历史，包含用户问题
     this.fullMessageHistory = [
       { role: 'user', content: userQuestion },
     ];
 
-    // Round 1: Gentle Agent 基于用户问题回复
     this.currentRound = 1;
 
     const gentleResponse = await this.streamResponse(
       this.gentleConfig,
-      [...this.fullMessageHistory], // 发送完整历史
+      [...this.fullMessageHistory],
       onChunk,
       signal
     );
@@ -196,14 +265,11 @@ export class AgentTeam {
       timestamp: Date.now(),
     };
 
-    // 将Gentle的回复加入历史
     this.fullMessageHistory.push({
       role: 'assistant',
       content: gentleResponse,
     });
 
-    // Round 1: Angry Agent 看到用户问题和Gentle的回复
-    // 添加用户引导，让Angry知道要反驳
     const angryContext: Message[] = [
       ...this.fullMessageHistory,
       {
@@ -227,7 +293,6 @@ export class AgentTeam {
       timestamp: Date.now(),
     };
 
-    // 将Angry的回复加入历史（作为assistant，但在下一轮会添加user引导）
     this.fullMessageHistory.push({
       role: 'assistant',
       content: angryResponse1,
@@ -242,12 +307,9 @@ export class AgentTeam {
     this.debateHistory.push(round1);
     debateStorage.addRound(this.currentSessionId, round1);
 
-    // Additional rounds - 每轮都累积完整历史
     for (let round = 2; round <= maxRounds; round++) {
       this.currentRound = round;
 
-      // Gentle回应Angry - 使用累积的完整历史
-      // 添加用户引导，让Gentle回应反驳
       const gentleContext: Message[] = [
         ...this.fullMessageHistory,
         {
@@ -271,13 +333,11 @@ export class AgentTeam {
         timestamp: Date.now(),
       };
 
-      // 更新历史
       this.fullMessageHistory.push({
         role: 'assistant',
         content: gentleResponseNext,
       });
 
-      // Angry回应 - 使用更新后的完整历史
       const angryContextNext: Message[] = [
         ...this.fullMessageHistory,
         {
@@ -301,7 +361,6 @@ export class AgentTeam {
         timestamp: Date.now(),
       };
 
-      // 更新历史
       this.fullMessageHistory.push({
         role: 'assistant',
         content: angryResponseNext,
@@ -318,7 +377,6 @@ export class AgentTeam {
     }
   }
 
-  // 继续已有会话进行额外轮次
   async continueDebate(
     additionalRounds: number,
     onChunk: StreamCallback,
@@ -334,12 +392,10 @@ export class AgentTeam {
     for (let round = startRound; round <= endRound; round++) {
       this.currentRound = round;
 
-      // 获取最后一轮的回复
       const lastRound = this.debateHistory[this.debateHistory.length - 1];
       const lastGentleResponse = lastRound.gentleResponse.content;
       const lastAngryResponse = lastRound.angryResponse.content;
 
-      // Gentle先回应
       const gentleContext: Message[] = [
         ...this.fullMessageHistory,
         {
@@ -368,7 +424,6 @@ export class AgentTeam {
         content: gentleResponseNext,
       });
 
-      // Angry回应
       const angryContextNext: Message[] = [
         ...this.fullMessageHistory,
         {

@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState, useEffect } from 'react';
 import { AgentTeam } from '../agents/AgentTeam';
 import type { StreamCallback } from '../agents/AgentTeam';
-import type { AgentConfig, StreamChunk, DebateSession, DebateRound } from '../types';
+import type { AgentConfig, StreamChunk, DebateSession, AgentMode } from '../types';
 import { debateStorage } from '../stores/debateStorage';
 
 interface UseAgentTeamOptions {
@@ -16,6 +16,8 @@ interface UseAgentTeamReturn {
   angryStream: StreamChunk | null;
   currentSession: DebateSession | null;
   sessions: DebateSession[];
+  mode: AgentMode;
+  setMode: (mode: AgentMode) => void;
   runDebate: (question: string) => Promise<void>;
   loadSession: (sessionId: string) => void;
   createNewSession: () => void;
@@ -31,6 +33,7 @@ export function useAgentTeam(options: UseAgentTeamOptions): UseAgentTeamReturn {
   const [angryStream, setAngryStream] = useState<StreamChunk | null>(null);
   const [currentSession, setCurrentSession] = useState<DebateSession | null>(null);
   const [sessions, setSessions] = useState<DebateSession[]>([]);
+  const [mode, setMode] = useState<AgentMode>('double');
 
   const agentTeamRef = useRef<AgentTeam | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -53,6 +56,7 @@ export function useAgentTeam(options: UseAgentTeamOptions): UseAgentTeamReturn {
     const current = debateStorage.getCurrentSession();
     if (current) {
       setCurrentSession(current);
+      setMode(current.mode || 'double');
       agentTeamRef.current?.loadSession(current);
     }
   }, [refreshSessions]);
@@ -86,12 +90,19 @@ export function useAgentTeam(options: UseAgentTeamOptions): UseAgentTeamReturn {
     abortControllerRef.current = new AbortController();
 
     try {
-      await agentTeamRef.current?.runDebate(
-        question,
-        handleChunk,
-        abortControllerRef.current.signal
-      );
-      // Update current session after debate
+      if (mode === 'single') {
+        await agentTeamRef.current?.runSingle(
+          question,
+          handleChunk,
+          abortControllerRef.current.signal
+        );
+      } else {
+        await agentTeamRef.current?.runDebate(
+          question,
+          handleChunk,
+          abortControllerRef.current.signal
+        );
+      }
       const session = debateStorage.getCurrentSession();
       setCurrentSession(session || null);
       refreshSessions();
@@ -102,7 +113,7 @@ export function useAgentTeam(options: UseAgentTeamOptions): UseAgentTeamReturn {
     } finally {
       setIsRunning(false);
     }
-  }, [handleChunk, refreshSessions]);
+  }, [handleChunk, mode, refreshSessions]);
 
   const loadSession = useCallback((sessionId: string) => {
     const session = debateStorage.getSession(sessionId);
@@ -110,7 +121,7 @@ export function useAgentTeam(options: UseAgentTeamOptions): UseAgentTeamReturn {
       debateStorage.setCurrentSession(sessionId);
       agentTeamRef.current?.loadSession(session);
       setCurrentSession(session);
-      // Clear streams when loading a session
+      setMode(session.mode || 'double');
       setGentleStream(null);
       setAngryStream(null);
       setError(null);
@@ -154,6 +165,8 @@ export function useAgentTeam(options: UseAgentTeamOptions): UseAgentTeamReturn {
     angryStream,
     currentSession,
     sessions,
+    mode,
+    setMode,
     runDebate,
     loadSession,
     createNewSession,

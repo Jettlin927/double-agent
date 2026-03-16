@@ -1,5 +1,6 @@
 export type AgentPersonality = 'gentle' | 'angry';
 export type ApiType = 'openai' | 'anthropic';
+export type AgentMode = 'double' | 'single';
 
 export interface AgentConfig {
   id: string;
@@ -58,6 +59,7 @@ export interface DebateSession {
   maxRounds: number;
   gentleConfig: AgentConfig;
   angryConfig: AgentConfig;
+  mode: AgentMode;
 }
 
 export interface APIAdapter {
