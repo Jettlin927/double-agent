@@ -48,6 +48,18 @@ export interface DebateRound {
   angryResponse: ChatMessage;
 }
 
+export interface DebateSession {
+  id: string;
+  title: string;
+  userQuestion: string;
+  createdAt: number;
+  updatedAt: number;
+  rounds: DebateRound[];
+  maxRounds: number;
+  gentleConfig: AgentConfig;
+  angryConfig: AgentConfig;
+}
+
 export interface APIAdapter {
   buildRequest(messages: Message[], config: AgentConfig): RequestInit;
   parseStream(chunk: string): StreamChunk | null;
