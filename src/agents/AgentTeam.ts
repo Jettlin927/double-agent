@@ -2,8 +2,15 @@ import type { AgentConfig, Message, ChatMessage, DebateRound, StreamChunk, Debat
 import { OpenAIAdapter } from './OpenAIAdapter';
 import { AnthropicAdapter } from './AnthropicAdapter';
 import { debateStorage } from '../stores/debateStorage';
+import { getEndingPrompt, getRoleById } from '../prompts';
 
 export type StreamCallback = (agentId: string, chunk: StreamChunk) => void;
+export type RoundCompleteCallback = (round: number, shouldEnd: boolean) => void;
+
+interface EndingCheckResult {
+  shouldEnd: boolean;
+  reason?: string;
+}
 
 export class AgentTeam {
   private gentleConfig: AgentConfig;
@@ -13,6 +20,7 @@ export class AgentTeam {
   private currentSessionId: string | null = null;
   private fullMessageHistory: Message[] = [];
   private mode: AgentMode = 'double';
+  private maxAutoRounds = 10; // 防止无限循环的安全上限
 
   constructor(gentleConfig: AgentConfig, angryConfig: AgentConfig) {
     this.gentleConfig = gentleConfig;
@@ -44,6 +52,10 @@ export class AgentTeam {
     return this.mode;
   }
 
+  setMaxAutoRounds(max: number) {
+    this.maxAutoRounds = max;
+  }
+
   // 加载历史会话并恢复上下文
   loadSession(session: DebateSession): Message[] {
     this.reset();
@@ -58,25 +70,25 @@ export class AgentTeam {
       messages.push({ role: 'user', content: session.userQuestion });
 
       if (session.mode === 'single') {
-        // 单Agent模式：只有gentleResponse
         session.rounds.forEach((round) => {
-          messages.push({
-            role: 'assistant',
-            content: round.gentleResponse.content,
-          });
+          if (round.gentleResponse.content) {
+            messages.push({
+              role: 'assistant',
+              content: round.gentleResponse.content,
+            });
+          }
         });
       } else {
-        // 双Agent模式：两个Agent都有
         session.rounds.forEach((round, index) => {
           messages.push({
             role: 'assistant',
             content: round.gentleResponse.content,
           });
 
-          if (index < session.rounds.length - 1) {
+          if (round.angryResponse.content) {
             messages.push({
-              role: 'user',
-              content: `另一位助手回复："${round.angryResponse.content}"\n\n请继续讨论。`,
+              role: 'assistant',
+              content: `[对方回应] ${round.angryResponse.content}`,
             });
           }
         });
@@ -115,10 +127,7 @@ export class AgentTeam {
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error(`[API 404 Debug] 请求URL: ${endpoint}`);
-      console.error(`[API 404 Debug] Base URL: ${config.baseURL}`);
-      console.error(`[API 404 Debug] API类型: ${config.apiType}`);
-      throw new Error(`API错误 (${response.status}): ${errorText} (请求URL: ${endpoint})`);
+      throw new Error(`API错误 (${response.status}): ${errorText}`);
     }
 
     const reader = response.body?.getReader();
@@ -141,10 +150,8 @@ export class AgentTeam {
 
         for (const line of lines) {
           const chunk = adapter.parseStream(line + '\n');
-          if (chunk) {
-            if (chunk.content) {
-              fullContent += chunk.content;
-            }
+          if (chunk?.content) {
+            fullContent += chunk.content;
             onChunk(config.id, chunk);
           }
         }
@@ -164,10 +171,90 @@ export class AgentTeam {
     return fullContent;
   }
 
-  // 单Agent对话模式
+  // 非流式请求（用于结束判断）
+  private async request(
+    config: AgentConfig,
+    messages: Message[],
+    signal?: AbortSignal
+  ): Promise<string> {
+    const adapter = this.getAdapter(config.apiType);
+    let baseURL = config.baseURL.replace(/\/$/, '');
+    const apiPath = adapter.getEndpoint();
+
+    if (baseURL.endsWith('/v1') && apiPath.startsWith('/v1/')) {
+      baseURL = baseURL.slice(0, -3);
+    }
+
+    const endpoint = baseURL + apiPath;
+
+    // 复制请求配置但关闭流式
+    const requestInit = adapter.buildRequest(messages, config);
+    const body = JSON.parse(requestInit.body as string);
+    body.stream = false;
+
+    const response = await fetch(endpoint, {
+      ...requestInit,
+      body: JSON.stringify(body),
+      signal,
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`API错误 (${response.status}): ${errorText}`);
+    }
+
+    const data = await response.json();
+
+    // 解析 OpenAI 格式响应
+    if (data.choices?.[0]?.message?.content) {
+      return data.choices[0].message.content;
+    }
+
+    // 解析 Anthropic 格式响应
+    if (data.content?.[0]?.text) {
+      return data.content[0].text;
+    }
+
+    return '';
+  }
+
+  // 检查是否应该结束对话
+  private async checkShouldEnd(
+    config: AgentConfig,
+    conversationHistory: Message[],
+    isSingleMode: boolean,
+    signal?: AbortSignal
+  ): Promise<EndingCheckResult> {
+    // 获取角色的结束判断提示
+    const endingPrompt = getEndingPrompt(config.systemPrompt, isSingleMode);
+
+    const checkMessages: Message[] = [
+      ...conversationHistory,
+      { role: 'user', content: endingPrompt },
+    ];
+
+    try {
+      const response = await this.request(config, checkMessages, signal);
+      const content = response.trim();
+
+      // 解析结果
+      if (content.includes('[END]')) {
+        return { shouldEnd: true, reason: content };
+      }
+
+      return { shouldEnd: false, reason: content };
+    } catch (error) {
+      console.error('结束判断失败:', error);
+      // 出错时默认继续，但超过安全上限会停止
+      return { shouldEnd: false };
+    }
+  }
+
+  // 单Agent对话模式（动态结束）
   async runSingle(
     userQuestion: string,
     onChunk: StreamCallback,
+    onRoundComplete?: RoundCompleteCallback,
     signal?: AbortSignal
   ): Promise<void> {
     this.reset();
@@ -181,51 +268,73 @@ export class AgentTeam {
     );
     this.currentSessionId = session.id;
 
-    this.fullMessageHistory = [
-      { role: 'user', content: userQuestion },
-    ];
+    this.fullMessageHistory = [{ role: 'user', content: userQuestion }];
+    this.currentRound = 0;
 
-    const response = await this.streamResponse(
-      this.gentleConfig,
-      [...this.fullMessageHistory],
-      onChunk,
-      signal
-    );
+    while (this.currentRound < this.maxAutoRounds) {
+      this.currentRound++;
 
-    const message: ChatMessage = {
-      id: `gentle-${Date.now()}`,
-      role: 'assistant',
-      content: response,
-      agentId: this.gentleConfig.id,
-      timestamp: Date.now(),
-    };
+      // 生成回复
+      const response = await this.streamResponse(
+        this.gentleConfig,
+        [...this.fullMessageHistory],
+        onChunk,
+        signal
+      );
 
-    this.fullMessageHistory.push({
-      role: 'assistant',
-      content: response,
-    });
-
-    // 单Agent模式下，angryResponse为空占位
-    const round: DebateRound = {
-      round: 1,
-      gentleResponse: message,
-      angryResponse: {
-        id: 'empty',
+      const message: ChatMessage = {
+        id: `gentle-${Date.now()}`,
         role: 'assistant',
-        content: '',
+        content: response,
+        agentId: this.gentleConfig.id,
         timestamp: Date.now(),
-        agentId: 'angry-agent',
-      },
-    };
+      };
 
-    this.debateHistory.push(round);
-    debateStorage.addRound(this.currentSessionId, round);
+      this.fullMessageHistory.push({ role: 'assistant', content: response });
+
+      const round: DebateRound = {
+        round: this.currentRound,
+        gentleResponse: message,
+        angryResponse: {
+          id: 'empty',
+          role: 'assistant',
+          content: '',
+          timestamp: Date.now(),
+          agentId: 'angry-agent',
+        },
+      };
+
+      this.debateHistory.push(round);
+      debateStorage.addRound(this.currentSessionId, round);
+
+      // 检查是否应该结束（第一轮不检查，至少需要一轮回复）
+      if (this.currentRound >= 1) {
+        const { shouldEnd } = await this.checkShouldEnd(
+          this.gentleConfig,
+          this.fullMessageHistory,
+          true,
+          signal
+        );
+
+        onRoundComplete?.(this.currentRound, shouldEnd);
+
+        if (shouldEnd) {
+          break;
+        }
+      }
+    }
+
+    // 如果达到最大轮数，强制结束
+    if (this.currentRound >= this.maxAutoRounds) {
+      onRoundComplete?.(this.currentRound, true);
+    }
   }
 
-  // 双Agent辩论模式
+  // 双Agent辩论模式（动态结束）
   async runDebate(
     userQuestion: string,
     onChunk: StreamCallback,
+    onRoundComplete?: RoundCompleteCallback,
     signal?: AbortSignal
   ): Promise<void> {
     this.reset();
@@ -239,227 +348,100 @@ export class AgentTeam {
     );
     this.currentSessionId = session.id;
 
-    const maxRounds = Math.min(
-      this.gentleConfig.maxRounds,
-      this.angryConfig.maxRounds
-    );
+    this.fullMessageHistory = [{ role: 'user', content: userQuestion }];
+    this.currentRound = 0;
 
-    this.fullMessageHistory = [
-      { role: 'user', content: userQuestion },
-    ];
+    while (this.currentRound < this.maxAutoRounds) {
+      this.currentRound++;
 
-    this.currentRound = 1;
+      // Gentle Agent 发言
+      const gentleContext: Message[] = [...this.fullMessageHistory];
 
-    const gentleResponse = await this.streamResponse(
-      this.gentleConfig,
-      [...this.fullMessageHistory],
-      onChunk,
-      signal
-    );
-
-    const gentleMessage: ChatMessage = {
-      id: `gentle-${Date.now()}`,
-      role: 'assistant',
-      content: gentleResponse,
-      agentId: this.gentleConfig.id,
-      timestamp: Date.now(),
-    };
-
-    this.fullMessageHistory.push({
-      role: 'assistant',
-      content: gentleResponse,
-    });
-
-    const angryContext: Message[] = [
-      ...this.fullMessageHistory,
-      {
-        role: 'user',
-        content: `另一位助手（温和派）刚刚这样回答。请给出你的观点，并指出你可能不同意的地方。保持你直率、批判性的风格。`,
-      },
-    ];
-
-    const angryResponse1 = await this.streamResponse(
-      this.angryConfig,
-      angryContext,
-      onChunk,
-      signal
-    );
-
-    const angryMessage1: ChatMessage = {
-      id: `angry-${Date.now()}`,
-      role: 'assistant',
-      content: angryResponse1,
-      agentId: this.angryConfig.id,
-      timestamp: Date.now(),
-    };
-
-    this.fullMessageHistory.push({
-      role: 'assistant',
-      content: angryResponse1,
-    });
-
-    const round1: DebateRound = {
-      round: 1,
-      gentleResponse: gentleMessage,
-      angryResponse: angryMessage1,
-    };
-
-    this.debateHistory.push(round1);
-    debateStorage.addRound(this.currentSessionId, round1);
-
-    for (let round = 2; round <= maxRounds; round++) {
-      this.currentRound = round;
-
-      const gentleContext: Message[] = [
-        ...this.fullMessageHistory,
-        {
+      if (this.currentRound > 1) {
+        // 第二轮开始添加辩论引导
+        const lastRound = this.debateHistory[this.debateHistory.length - 1];
+        gentleContext.push({
           role: 'user',
-          content: `另一位助手（暴躁派）反驳道："${angryResponse1}"\n\n请回应这个反驳，解释你的观点或者承认对方合理的部分。这是第${round}轮讨论。保持你温和、理性的风格。`,
-        },
-      ];
+          content: `另一位助手（暴躁派）回应道："${lastRound.angryResponse.content}"\n\n请继续讨论，这是第${this.currentRound}轮。`,
+        });
+      }
 
-      const gentleResponseNext = await this.streamResponse(
+      const gentleResponse = await this.streamResponse(
         this.gentleConfig,
         gentleContext,
         onChunk,
         signal
       );
 
-      const gentleMessageNext: ChatMessage = {
-        id: `gentle-${Date.now()}-${round}`,
+      const gentleMessage: ChatMessage = {
+        id: `gentle-${Date.now()}`,
         role: 'assistant',
-        content: gentleResponseNext,
+        content: gentleResponse,
         agentId: this.gentleConfig.id,
         timestamp: Date.now(),
       };
 
-      this.fullMessageHistory.push({
-        role: 'assistant',
-        content: gentleResponseNext,
-      });
+      this.fullMessageHistory.push({ role: 'assistant', content: gentleResponse });
 
-      const angryContextNext: Message[] = [
+      // Angry Agent 发言
+      const angryContext: Message[] = [
         ...this.fullMessageHistory,
         {
           role: 'user',
-          content: `另一位助手（温和派）回应道："${gentleResponseNext}"\n\n请继续辩论，坚持你的观点或者提出新的反驳。这是第${round}轮讨论。保持你直率、批判性的风格。`,
+          content: this.currentRound === 1
+            ? '另一位助手（温和派）刚刚这样回答。请给出你的观点，并指出你可能不同意的地方。'
+            : `另一位助手（温和派）回应道："${gentleResponse}"\n\n请继续辩论，这是第${this.currentRound}轮。`,
         },
       ];
 
-      const angryResponseNext = await this.streamResponse(
+      const angryResponse = await this.streamResponse(
         this.angryConfig,
-        angryContextNext,
+        angryContext,
         onChunk,
         signal
       );
 
-      const angryMessageNext: ChatMessage = {
-        id: `angry-${Date.now()}-${round}`,
+      const angryMessage: ChatMessage = {
+        id: `angry-${Date.now()}`,
         role: 'assistant',
-        content: angryResponseNext,
+        content: angryResponse,
         agentId: this.angryConfig.id,
         timestamp: Date.now(),
       };
 
-      this.fullMessageHistory.push({
-        role: 'assistant',
-        content: angryResponseNext,
-      });
+      this.fullMessageHistory.push({ role: 'assistant', content: angryResponse });
 
-      const roundData: DebateRound = {
-        round,
-        gentleResponse: gentleMessageNext,
-        angryResponse: angryMessageNext,
+      // 保存本轮
+      const round: DebateRound = {
+        round: this.currentRound,
+        gentleResponse: gentleMessage,
+        angryResponse: angryMessage,
       };
 
-      this.debateHistory.push(roundData);
-      debateStorage.addRound(this.currentSessionId, roundData);
+      this.debateHistory.push(round);
+      debateStorage.addRound(this.currentSessionId, round);
+
+      // 检查是否应该结束（第二轮开始检查）
+      if (this.currentRound >= 2) {
+        // 使用温和Agent来判断是否结束（更保守）
+        const { shouldEnd } = await this.checkShouldEnd(
+          this.gentleConfig,
+          this.fullMessageHistory,
+          false,
+          signal
+        );
+
+        onRoundComplete?.(this.currentRound, shouldEnd);
+
+        if (shouldEnd) {
+          break;
+        }
+      }
     }
-  }
 
-  async continueDebate(
-    additionalRounds: number,
-    onChunk: StreamCallback,
-    signal?: AbortSignal
-  ): Promise<void> {
-    if (!this.currentSessionId || this.debateHistory.length === 0) {
-      throw new Error('没有可继续的会话');
-    }
-
-    const startRound = this.currentRound + 1;
-    const endRound = this.currentRound + additionalRounds;
-
-    for (let round = startRound; round <= endRound; round++) {
-      this.currentRound = round;
-
-      const lastRound = this.debateHistory[this.debateHistory.length - 1];
-      const lastGentleResponse = lastRound.gentleResponse.content;
-      const lastAngryResponse = lastRound.angryResponse.content;
-
-      const gentleContext: Message[] = [
-        ...this.fullMessageHistory,
-        {
-          role: 'user',
-          content: `另一位助手（暴躁派）说："${lastAngryResponse}"\n\n请回应。这是第${round}轮讨论。`,
-        },
-      ];
-
-      const gentleResponseNext = await this.streamResponse(
-        this.gentleConfig,
-        gentleContext,
-        onChunk,
-        signal
-      );
-
-      const gentleMessageNext: ChatMessage = {
-        id: `gentle-${Date.now()}-${round}`,
-        role: 'assistant',
-        content: gentleResponseNext,
-        agentId: this.gentleConfig.id,
-        timestamp: Date.now(),
-      };
-
-      this.fullMessageHistory.push({
-        role: 'assistant',
-        content: gentleResponseNext,
-      });
-
-      const angryContextNext: Message[] = [
-        ...this.fullMessageHistory,
-        {
-          role: 'user',
-          content: `另一位助手（温和派）说："${gentleResponseNext}"\n\n请回应。这是第${round}轮讨论。`,
-        },
-      ];
-
-      const angryResponseNext = await this.streamResponse(
-        this.angryConfig,
-        angryContextNext,
-        onChunk,
-        signal
-      );
-
-      const angryMessageNext: ChatMessage = {
-        id: `angry-${Date.now()}-${round}`,
-        role: 'assistant',
-        content: angryResponseNext,
-        agentId: this.angryConfig.id,
-        timestamp: Date.now(),
-      };
-
-      this.fullMessageHistory.push({
-        role: 'assistant',
-        content: angryResponseNext,
-      });
-
-      const roundData: DebateRound = {
-        round,
-        gentleResponse: gentleMessageNext,
-        angryResponse: angryMessageNext,
-      };
-
-      this.debateHistory.push(roundData);
-      debateStorage.addRound(this.currentSessionId, roundData);
+    // 如果达到最大轮数，强制结束
+    if (this.currentRound >= this.maxAutoRounds) {
+      onRoundComplete?.(this.currentRound, true);
     }
   }
 }

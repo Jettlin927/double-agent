@@ -6,6 +6,7 @@ export interface RoleDefinition {
   personality: AgentPersonality;
   description: string;
   systemPrompt: string;
+  endingPrompt?: string;  // 用于判断对话是否应该结束
   icon?: string;
 }
 
@@ -23,6 +24,15 @@ export const GENTLE_ROLES: RoleDefinition[] = [
 - 回答时会考虑多方因素，给出平衡的建议
 
 在对话中，你会先认真理解对方的问题，然后给出温暖、有建设性的回答。`,
+    endingPrompt: `请判断当前对话是否已经可以结束。考虑以下因素：
+1. 问题是否得到了充分的回答
+2. 双方是否达成了共识或找到了解决方案
+3. 是否还有新的观点需要补充
+
+如果认为对话可以结束，请回复："[END]"
+如果认为还需要继续讨论，请回复："[CONTINUE]"
+
+只回复上述标记之一，不要添加其他内容。`,
   },
   {
     id: 'gentle-therapist',
@@ -37,6 +47,15 @@ export const GENTLE_ROLES: RoleDefinition[] = [
 - 使用温暖、安全的语言表达
 
 你的目标是让对方感到被理解和支持。`,
+    endingPrompt: `请判断这次对话是否可以结束。作为心理倾听者，考虑：
+1. 对方的情绪是否得到了安抚
+2. 是否提供了有用的 insights 或建议
+3. 对方是否看起来已经准备好结束对话
+
+如果对话可以结束，请回复："[END]"
+如果还需要继续倾听和支持，请回复："[CONTINUE]"
+
+只回复上述标记之一。`,
   },
   {
     id: 'gentle-teacher',
@@ -51,6 +70,15 @@ export const GENTLE_ROLES: RoleDefinition[] = [
 - 营造轻松愉快的学习氛围
 
 你的目标是让每个学生都能理解并享受学习的过程。`,
+    endingPrompt: `请判断当前教学对话是否可以结束。考虑：
+1. 知识点是否讲解清楚
+2. 学生是否表现出理解
+3. 是否还有重要的内容需要补充
+
+如果教学可以结束，请回复："[END]"
+如果还需要继续讲解，请回复："[CONTINUE]"
+
+只回复上述标记之一。`,
   },
   {
     id: 'gentle-friend',
@@ -65,6 +93,15 @@ export const GENTLE_ROLES: RoleDefinition[] = [
 - 用轻松幽默的方式交流
 
 你的目标是让对方感到轻松愉快，像和真正的朋友聊天一样。`,
+    endingPrompt: `请判断这次朋友间的对话是否可以自然结束。考虑：
+1. 话题是否已经聊得差不多了
+2. 双方是否都感到满意
+3. 是否还有未尽的事宜
+
+如果对话可以结束，请回复："[END]"
+如果还想继续聊聊，请回复："[CONTINUE]"
+
+只回复上述标记之一。`,
   },
 ];
 
@@ -82,6 +119,15 @@ export const ANGRY_ROLES: RoleDefinition[] = [
 - 虽然语气强硬，但目的是为了更好地解决问题
 
 在对话中，你会毫不犹豫地指出对方观点中的问题，提出尖锐但有价值的反驳。`,
+    endingPrompt: `请判断这场辩论是否已经足够。作为暴躁助手，考虑：
+1. 对方的核心观点是否已经被充分反驳
+2. 是否还有值得争论的要点
+3. 继续争论是否有价值，还是只是在重复
+
+如果认为辩论可以结束，请回复："[END]"
+如果认为还有值得争辩的地方，请回复："[CONTINUE]"
+
+只回复上述标记之一。`,
   },
   {
     id: 'angry-critic',
@@ -96,6 +142,15 @@ export const ANGRY_ROLES: RoleDefinition[] = [
 - 用自己的方式推动改进
 
 你的目标是用最直接的方式指出问题，哪怕让人不舒服，但确实有帮助。`,
+    endingPrompt: `请判断你的吐槽是否已经足够。考虑：
+1. 问题是否已经被充分揭露
+2. 对方是否已经被"喷"得够惨
+3. 继续吐槽是否会变得冗余
+
+如果吐槽可以结束，请回复："[END]"
+如果还有槽点没吐完，请回复："[CONTINUE]"
+
+只回复上述标记之一。`,
   },
   {
     id: 'angry-debate',
@@ -110,6 +165,15 @@ export const ANGRY_ROLES: RoleDefinition[] = [
 - 即使同意对方观点，也要找出反例
 
 你的目标是通过激烈的辩论让真理越辩越明，让对方的观点更加完善。`,
+    endingPrompt: `请判断这场辩论是否已经穷尽。作为辩论对手，考虑：
+1. 对方的论点是否已经被充分挑战
+2. 是否还有新的反驳角度
+3. 继续辩论是否会产生新的 insight，还是只是重复
+
+如果辩论可以结束，请回复："[END]"
+如果还有论点要挑战，请回复："[CONTINUE]"
+
+只回复上述标记之一。`,
   },
   {
     id: 'angry-mentor',
@@ -124,8 +188,28 @@ export const ANGRY_ROLES: RoleDefinition[] = [
 - 虽然严厉，但真心希望学生成功
 
 你的目标是用严格的标准推动学生突破自己的极限，虽然过程可能不舒服，但结果会让人成长。`,
+    endingPrompt: `请判断这次指导是否可以结束。作为严师，考虑：
+1. 学生的错误是否已经被充分指出
+2. 是否给出了明确的改进方向
+3. 学生是否得到了足够的"敲打"
+
+如果指导可以结束，请回复："[END]"
+如果还需要继续严格指导，请回复："[CONTINUE]"
+
+只回复上述标记之一。`,
   },
 ];
+
+// 单Agent模式的结束判断提示
+export const SINGLE_AGENT_ENDING_PROMPT = `请判断当前对话是否已经可以结束。考虑：
+1. 用户的问题是否得到了充分回答
+2. 对话是否已经达到了自然的收尾点
+3. 是否还有重要的信息需要补充
+
+如果认为对话可以结束，请回复："[END]"
+如果认为还需要继续对话，请回复："[CONTINUE]"
+
+只回复上述标记之一，不要添加其他内容。`;
 
 // 获取所有角色
 export function getAllRoles(): RoleDefinition[] {
@@ -139,10 +223,19 @@ export function getRolesByPersonality(personality: AgentPersonality): RoleDefini
 
 // 根据ID获取角色
 export function getRoleById(id: string): RoleDefinition | undefined {
-  return getAllRoles().find(role => role.id === id);
+  return getAllRoles().find(role => role.id);
 }
 
 // 获取默认角色
 export function getDefaultRole(personality: AgentPersonality): RoleDefinition {
   return personality === 'gentle' ? GENTLE_ROLES[0] : ANGRY_ROLES[0];
+}
+
+// 获取角色的结束判断提示
+export function getEndingPrompt(roleId: string, isSingleMode: boolean = false): string {
+  if (isSingleMode) {
+    return SINGLE_AGENT_ENDING_PROMPT;
+  }
+  const role = getRoleById(roleId);
+  return role?.endingPrompt || SINGLE_AGENT_ENDING_PROMPT;
 }

@@ -3,10 +3,12 @@ export {
   type RoleDefinition,
   GENTLE_ROLES,
   ANGRY_ROLES,
+  SINGLE_AGENT_ENDING_PROMPT,
   getAllRoles,
   getRolesByPersonality,
   getRoleById,
   getDefaultRole,
+  getEndingPrompt,
 } from './roles';
 
 export {

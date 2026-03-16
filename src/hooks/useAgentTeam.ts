@@ -14,6 +14,9 @@ interface UseAgentTeamReturn {
   error: string | null;
   gentleStream: StreamChunk | null;
   angryStream: StreamChunk | null;
+  currentRound: number;
+  totalRounds: number;
+  isEnding: boolean;
   currentSession: DebateSession | null;
   sessions: DebateSession[];
   mode: AgentMode;
@@ -34,6 +37,9 @@ export function useAgentTeam(options: UseAgentTeamOptions): UseAgentTeamReturn {
   const [currentSession, setCurrentSession] = useState<DebateSession | null>(null);
   const [sessions, setSessions] = useState<DebateSession[]>([]);
   const [mode, setMode] = useState<AgentMode>('double');
+  const [currentRound, setCurrentRound] = useState(0);
+  const [totalRounds, setTotalRounds] = useState(0);
+  const [isEnding, setIsEnding] = useState(false);
 
   const agentTeamRef = useRef<AgentTeam | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -57,6 +63,7 @@ export function useAgentTeam(options: UseAgentTeamOptions): UseAgentTeamReturn {
     if (current) {
       setCurrentSession(current);
       setMode(current.mode || 'double');
+      setTotalRounds(current.rounds.length);
       agentTeamRef.current?.loadSession(current);
     }
   }, [refreshSessions]);
@@ -79,6 +86,11 @@ export function useAgentTeam(options: UseAgentTeamOptions): UseAgentTeamReturn {
     }
   }, [options.gentleConfig.id, options.angryConfig.id]);
 
+  const handleRoundComplete = useCallback((round: number, shouldEnd: boolean) => {
+    setCurrentRound(round);
+    setIsEnding(shouldEnd);
+  }, []);
+
   const runDebate = useCallback(async (question: string) => {
     if (!question.trim()) return;
 
@@ -86,6 +98,8 @@ export function useAgentTeam(options: UseAgentTeamOptions): UseAgentTeamReturn {
     setIsRunning(true);
     setGentleStream({ content: '', reasoning: '', done: false });
     setAngryStream({ content: '', reasoning: '', done: false });
+    setCurrentRound(0);
+    setIsEnding(false);
 
     abortControllerRef.current = new AbortController();
 
@@ -94,17 +108,22 @@ export function useAgentTeam(options: UseAgentTeamOptions): UseAgentTeamReturn {
         await agentTeamRef.current?.runSingle(
           question,
           handleChunk,
+          handleRoundComplete,
           abortControllerRef.current.signal
         );
       } else {
         await agentTeamRef.current?.runDebate(
           question,
           handleChunk,
+          handleRoundComplete,
           abortControllerRef.current.signal
         );
       }
       const session = debateStorage.getCurrentSession();
-      setCurrentSession(session || null);
+      if (session) {
+        setCurrentSession(session);
+        setTotalRounds(session.rounds.length);
+      }
       refreshSessions();
     } catch (err) {
       if (err instanceof Error && err.name !== 'AbortError') {
@@ -112,8 +131,9 @@ export function useAgentTeam(options: UseAgentTeamOptions): UseAgentTeamReturn {
       }
     } finally {
       setIsRunning(false);
+      setIsEnding(false);
     }
-  }, [handleChunk, mode, refreshSessions]);
+  }, [handleChunk, handleRoundComplete, mode, refreshSessions]);
 
   const loadSession = useCallback((sessionId: string) => {
     const session = debateStorage.getSession(sessionId);
@@ -122,6 +142,7 @@ export function useAgentTeam(options: UseAgentTeamOptions): UseAgentTeamReturn {
       agentTeamRef.current?.loadSession(session);
       setCurrentSession(session);
       setMode(session.mode || 'double');
+      setTotalRounds(session.rounds.length);
       setGentleStream(null);
       setAngryStream(null);
       setError(null);
@@ -134,6 +155,9 @@ export function useAgentTeam(options: UseAgentTeamOptions): UseAgentTeamReturn {
     setGentleStream(null);
     setAngryStream(null);
     setError(null);
+    setCurrentRound(0);
+    setTotalRounds(0);
+    setIsEnding(false);
     debateStorage.setCurrentSession('');
   }, []);
 
@@ -156,6 +180,8 @@ export function useAgentTeam(options: UseAgentTeamOptions): UseAgentTeamReturn {
     setAngryStream(null);
     setError(null);
     setIsRunning(false);
+    setCurrentRound(0);
+    setIsEnding(false);
   }, []);
 
   return {
@@ -163,6 +189,9 @@ export function useAgentTeam(options: UseAgentTeamOptions): UseAgentTeamReturn {
     error,
     gentleStream,
     angryStream,
+    currentRound,
+    totalRounds,
+    isEnding,
     currentSession,
     sessions,
     mode,

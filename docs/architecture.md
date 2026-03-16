@@ -49,23 +49,29 @@ src/
 ### 1. Agent系统 (`src/agents/`)
 
 #### AgentTeam 类 (`AgentTeam.ts`)
-核心协调器，管理双Agent对话流程：
+核心协调器，管理双Agent对话流程，支持动态结束判断：
 
 ```typescript
 class AgentTeam {
   // 模式支持
   mode: 'single' | 'double'
+  maxAutoRounds: number          // 安全上限（默认10轮）
 
   // 核心方法
-  runSingle(question, onChunk, signal)     // 单Agent模式
-  runDebate(question, onChunk, signal)     // 双Agent辩论模式
+  runSingle(question, onChunk, onRoundComplete, signal)     // 单Agent模式
+  runDebate(question, onChunk, onRoundComplete, signal)     // 双Agent辩论模式
   loadSession(session)                     // 加载历史会话
-  continueDebate(rounds, onChunk, signal)  // 继续辩论
 
-  // 上下文管理
-  fullMessageHistory: Message[]  // 累积完整对话历史
+  // 动态结束判断
+  checkShouldEnd(config, history, isSingleMode): Promise<{shouldEnd, reason}>
 }
 ```
+
+**动态结束机制**：
+1. 每轮对话后，发送结束判断请求给Agent
+2. Agent 根据对话内容判断是否应该结束（回复 `[END]` 或 `[CONTINUE]`）
+3. 如果 `[END]`，则停止对话；如果 `[CONTINUE]`，继续下一轮
+4. 设置 `maxAutoRounds` 安全上限（默认10轮）防止无限循环
 
 **上下文构建策略**：
 - 每轮对话都将完整历史发送给LLM
@@ -79,7 +85,7 @@ class AgentTeam {
 ### 2. Prompt系统 (`src/prompts/`)
 
 #### 角色定义 (`roles.ts`)
-预定义多种角色人格，分为温和型和暴躁型：
+预定义多种角色人格，每个角色包含系统提示词和结束判断提示词：
 
 ```typescript
 interface RoleDefinition {
@@ -87,7 +93,8 @@ interface RoleDefinition {
   name: string;
   personality: 'gentle' | 'angry';
   description: string;
-  systemPrompt: string;
+  systemPrompt: string;      // 正常对话使用的提示词
+  endingPrompt?: string;     // 判断对话是否应该结束的提示词
 }
 
 // 温和型角色
@@ -101,6 +108,10 @@ interface RoleDefinition {
 - angry-critic: 毒舌评论家
 - angry-debate: 辩论对手
 - angry-mentor: 严师
+
+// 结束判断标记
+- "[END]" - 对话应该结束
+- "[CONTINUE]" - 继续对话
 ```
 
 #### 模型预设 (`models.ts`)
