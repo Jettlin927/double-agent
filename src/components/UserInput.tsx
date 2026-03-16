@@ -1,19 +1,39 @@
 import { useState, KeyboardEvent } from 'react';
-import { Send, Square } from 'lucide-react';
+import { Send, Square, Zap } from 'lucide-react';
 
 interface UserInputProps {
   onSend: (message: string) => void;
   onStop: () => void;
+  onCompact?: () => void;
   isRunning: boolean;
   disabled?: boolean;
+  contextPercent?: number;
+  isCompacted?: boolean;
 }
 
-export function UserInput({ onSend, onStop, isRunning, disabled }: UserInputProps) {
+export function UserInput({
+  onSend,
+  onStop,
+  onCompact,
+  isRunning,
+  disabled,
+  contextPercent = 0,
+  isCompacted = false,
+}: UserInputProps) {
   const [input, setInput] = useState('');
 
   const handleSend = () => {
-    if (!input.trim() || disabled) return;
-    onSend(input.trim());
+    const trimmed = input.trim();
+    if (!trimmed || disabled) return;
+
+    // 检查 /compact 命令
+    if (trimmed === '/compact') {
+      onCompact?.();
+      setInput('');
+      return;
+    }
+
+    onSend(trimmed);
     setInput('');
   };
 
@@ -24,9 +44,42 @@ export function UserInput({ onSend, onStop, isRunning, disabled }: UserInputProp
     }
   };
 
+  // 上下文使用情况颜色
+  const getContextColor = () => {
+    if (contextPercent >= 90) return 'text-red-500';
+    if (contextPercent >= 70) return 'text-yellow-500';
+    return 'text-gray-400';
+  };
+
   return (
     <div className="bg-white border-t border-gray-200 p-4">
       <div className="max-w-6xl mx-auto">
+        {/* 上下文使用指示器 */}
+        <div className="flex items-center justify-between mb-2 px-1">
+          <div className="flex items-center gap-2 text-xs">
+            <span className="text-gray-400">上下文使用:</span>
+            <div className="w-24 h-1.5 bg-gray-200 rounded-full overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all ${
+                  contextPercent >= 90 ? 'bg-red-500' :
+                  contextPercent >= 70 ? 'bg-yellow-500' : 'bg-green-500'
+                }`}
+                style={{ width: `${Math.min(contextPercent, 100)}%` }}
+              />
+            </div>
+            <span className={getContextColor()}>{contextPercent.toFixed(1)}%</span>
+            {isCompacted && (
+              <span className="text-blue-500 flex items-center gap-1">
+                <Zap className="w-3 h-3" />
+                已压缩
+              </span>
+            )}
+          </div>
+          <span className="text-xs text-gray-400">
+            输入 /compact 手动压缩上下文
+          </span>
+        </div>
+
         <div className="relative flex items-end gap-2 bg-gray-50 border border-gray-300 rounded-2xl p-2 focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-200 transition-all">
           <textarea
             value={input}

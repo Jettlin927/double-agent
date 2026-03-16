@@ -1,8 +1,9 @@
 import { useCallback, useRef, useState, useEffect } from 'react';
 import { AgentTeam } from '../agents/AgentTeam';
-import type { StreamCallback } from '../agents/AgentTeam';
+import type { StreamCallback, ContextManagerState } from '../agents/AgentTeam';
 import type { AgentConfig, StreamChunk, DebateSession, AgentMode } from '../types';
 import { debateStorage } from '../stores/debateStorage';
+import type { ContextStats } from '../utils/tokenCounter';
 
 interface UseAgentTeamOptions {
   gentleConfig: AgentConfig;
@@ -17,11 +18,13 @@ interface UseAgentTeamReturn {
   currentRound: number;
   totalRounds: number;
   isEnding: boolean;
+  contextStats: ContextManagerState | null;
   currentSession: DebateSession | null;
   sessions: DebateSession[];
   mode: AgentMode;
   setMode: (mode: AgentMode) => void;
   runDebate: (question: string) => Promise<void>;
+  compactContext: () => boolean;
   loadSession: (sessionId: string) => void;
   createNewSession: () => void;
   deleteSession: (sessionId: string) => void;
@@ -40,6 +43,7 @@ export function useAgentTeam(options: UseAgentTeamOptions): UseAgentTeamReturn {
   const [currentRound, setCurrentRound] = useState(0);
   const [totalRounds, setTotalRounds] = useState(0);
   const [isEnding, setIsEnding] = useState(false);
+  const [contextStats, setContextStats] = useState<ContextManagerState | null>(null);
 
   const agentTeamRef = useRef<AgentTeam | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -169,8 +173,18 @@ export function useAgentTeam(options: UseAgentTeamOptions): UseAgentTeamReturn {
     }
   }, [currentSession, createNewSession, refreshSessions]);
 
+  const compactContext = useCallback(() => {
+    const wasCompacted = agentTeamRef.current?.compactContext() || false;
+    if (wasCompacted) {
+      const stats = agentTeamRef.current?.getContextStats() || null;
+      setContextStats(stats);
+    }
+    return wasCompacted;
+  }, []);
+
   const stopDebate = useCallback(() => {
     abortControllerRef.current?.abort();
+    agentTeamRef.current?.stop();
     setIsRunning(false);
   }, []);
 
@@ -192,11 +206,13 @@ export function useAgentTeam(options: UseAgentTeamOptions): UseAgentTeamReturn {
     currentRound,
     totalRounds,
     isEnding,
+    contextStats,
     currentSession,
     sessions,
     mode,
     setMode,
     runDebate,
+    compactContext,
     loadSession,
     createNewSession,
     deleteSession,

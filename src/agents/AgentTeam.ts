@@ -2,14 +2,23 @@ import type { AgentConfig, Message, ChatMessage, DebateRound, StreamChunk, Debat
 import { OpenAIAdapter } from './OpenAIAdapter';
 import { AnthropicAdapter } from './AnthropicAdapter';
 import { debateStorage } from '../stores/debateStorage';
-import { getEndingPrompt, getRoleById } from '../prompts';
+import { getEndingPrompt } from '../prompts';
+import { calculateContextStats, compactMessages, shouldCompact, type ContextStats } from '../utils/tokenCounter';
 
 export type StreamCallback = (agentId: string, chunk: StreamChunk) => void;
 export type RoundCompleteCallback = (round: number, shouldEnd: boolean) => void;
+export type ContextUpdateCallback = (stats: ContextStats, gentleConfig: AgentConfig, angryConfig: AgentConfig) => void;
 
 interface EndingCheckResult {
   shouldEnd: boolean;
   reason?: string;
+}
+
+export interface ContextManagerState {
+  stats: ContextStats;
+  gentleStats: ContextStats;
+  angryStats: ContextStats;
+  isCompacted: boolean;
 }
 
 export class AgentTeam {
@@ -21,6 +30,8 @@ export class AgentTeam {
   private fullMessageHistory: Message[] = [];
   private mode: AgentMode = 'double';
   private maxAutoRounds = 10; // 防止无限循环的安全上限
+  private shouldStop = false; // 停止标志
+  private onContextUpdate?: ContextUpdateCallback;
 
   constructor(gentleConfig: AgentConfig, angryConfig: AgentConfig) {
     this.gentleConfig = gentleConfig;
@@ -38,6 +49,7 @@ export class AgentTeam {
     this.currentSessionId = null;
     this.fullMessageHistory = [];
     this.mode = 'double';
+    this.shouldStop = false;
   }
 
   getDebateHistory(): DebateRound[] {
@@ -54,6 +66,59 @@ export class AgentTeam {
 
   setMaxAutoRounds(max: number) {
     this.maxAutoRounds = max;
+  }
+
+  setContextUpdateCallback(callback: ContextUpdateCallback) {
+    this.onContextUpdate = callback;
+  }
+
+  // 停止对话
+  stop() {
+    this.shouldStop = true;
+  }
+
+  private checkShouldStop(): boolean {
+    return this.shouldStop;
+  }
+
+  // 获取上下文统计信息
+  getContextStats(): ContextManagerState {
+    const gentleStats = calculateContextStats(this.fullMessageHistory, this.gentleConfig.model);
+    const angryStats = calculateContextStats(this.fullMessageHistory, this.angryConfig.model);
+
+    return {
+      stats: gentleStats,
+      gentleStats,
+      angryStats,
+      isCompacted: false,
+    };
+  }
+
+  // 手动压缩上下文
+  compactContext(): boolean {
+    const originalLength = this.fullMessageHistory.length;
+    this.fullMessageHistory = compactMessages(this.fullMessageHistory, 4);
+    const wasCompacted = this.fullMessageHistory.length < originalLength;
+
+    this.updateContextStats();
+
+    return wasCompacted;
+  }
+
+  // 检查并自动压缩上下文
+  private checkAndAutoCompact(): boolean {
+    const stats = this.getContextStats();
+
+    if (shouldCompact(stats.stats, 80)) {
+      return this.compactContext();
+    }
+
+    return false;
+  }
+
+  private updateContextStats() {
+    const stats = this.getContextStats();
+    this.onContextUpdate?.(stats.stats, this.gentleConfig, this.angryConfig);
   }
 
   // 加载历史会话并恢复上下文
@@ -272,7 +337,21 @@ export class AgentTeam {
     this.currentRound = 0;
 
     while (this.currentRound < this.maxAutoRounds) {
+      // 检查是否被要求停止
+      if (this.checkShouldStop()) {
+        break;
+      }
+
       this.currentRound++;
+
+      // 检查并自动压缩上下文
+      const wasCompacted = this.checkAndAutoCompact();
+      if (wasCompacted) {
+        console.log(`[Context] 已自动压缩上下文，当前轮数: ${this.currentRound}`);
+      }
+
+      // 更新上下文统计
+      this.updateContextStats();
 
       // 生成回复
       const response = await this.streamResponse(
@@ -281,6 +360,11 @@ export class AgentTeam {
         onChunk,
         signal
       );
+
+      // 检查是否被要求停止
+      if (this.checkShouldStop()) {
+        break;
+      }
 
       const message: ChatMessage = {
         id: `gentle-${Date.now()}`,
@@ -291,6 +375,7 @@ export class AgentTeam {
       };
 
       this.fullMessageHistory.push({ role: 'assistant', content: response });
+      this.updateContextStats();
 
       const round: DebateRound = {
         round: this.currentRound,
@@ -318,7 +403,7 @@ export class AgentTeam {
 
         onRoundComplete?.(this.currentRound, shouldEnd);
 
-        if (shouldEnd) {
+        if (shouldEnd || this.checkShouldStop()) {
           break;
         }
       }
@@ -352,7 +437,21 @@ export class AgentTeam {
     this.currentRound = 0;
 
     while (this.currentRound < this.maxAutoRounds) {
+      // 检查是否被要求停止
+      if (this.checkShouldStop()) {
+        break;
+      }
+
       this.currentRound++;
+
+      // 检查并自动压缩上下文
+      const wasCompacted = this.checkAndAutoCompact();
+      if (wasCompacted) {
+        console.log(`[Context] 已自动压缩上下文，当前轮数: ${this.currentRound}`);
+      }
+
+      // 更新上下文统计
+      this.updateContextStats();
 
       // Gentle Agent 发言
       const gentleContext: Message[] = [...this.fullMessageHistory];
@@ -373,6 +472,11 @@ export class AgentTeam {
         signal
       );
 
+      // 检查是否被要求停止
+      if (this.checkShouldStop()) {
+        break;
+      }
+
       const gentleMessage: ChatMessage = {
         id: `gentle-${Date.now()}`,
         role: 'assistant',
@@ -382,6 +486,7 @@ export class AgentTeam {
       };
 
       this.fullMessageHistory.push({ role: 'assistant', content: gentleResponse });
+      this.updateContextStats();
 
       // Angry Agent 发言
       const angryContext: Message[] = [
@@ -401,6 +506,11 @@ export class AgentTeam {
         signal
       );
 
+      // 检查是否被要求停止
+      if (this.checkShouldStop()) {
+        break;
+      }
+
       const angryMessage: ChatMessage = {
         id: `angry-${Date.now()}`,
         role: 'assistant',
@@ -410,6 +520,7 @@ export class AgentTeam {
       };
 
       this.fullMessageHistory.push({ role: 'assistant', content: angryResponse });
+      this.updateContextStats();
 
       // 保存本轮
       const round: DebateRound = {
@@ -432,6 +543,11 @@ export class AgentTeam {
         );
 
         onRoundComplete?.(this.currentRound, shouldEnd);
+
+        if (shouldEnd || this.checkShouldStop()) {
+          break;
+        }
+      }
 
         if (shouldEnd) {
           break;

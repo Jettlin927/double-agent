@@ -26,10 +26,12 @@ function App() {
     mode,
     setMode,
     runDebate,
+    compactContext,
     loadSession,
     createNewSession,
     deleteSession,
     stopDebate,
+    contextStats,
   } = useAgentTeam({
     gentleConfig,
     angryConfig,
@@ -178,8 +180,11 @@ function App() {
           <UserInput
             onSend={handleSend}
             onStop={stopDebate}
+            onCompact={compactContext}
             isRunning={isRunning}
             disabled={!isConfigured}
+            contextPercent={contextStats?.stats.usagePercent || 0}
+            isCompacted={contextStats?.isCompacted || false}
           />
         </div>
       </div>
