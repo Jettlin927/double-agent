@@ -40,7 +40,16 @@ export class AgentTeam {
     signal?: AbortSignal
   ): Promise<string> {
     const adapter = this.getAdapter(config.apiType);
-    const endpoint = config.baseURL.replace(/\/$/, '') + adapter.getEndpoint();
+    // 智能处理baseURL，避免重复的/v1路径
+    let baseURL = config.baseURL.replace(/\/$/, '');
+    const apiPath = adapter.getEndpoint(); // e.g. /v1/chat/completions
+
+    // 如果baseURL已经包含/v1，且apiPath也以/v1开头，则去掉baseURL末尾的/v1
+    if (baseURL.endsWith('/v1') && apiPath.startsWith('/v1/')) {
+      baseURL = baseURL.slice(0, -3); // 移除末尾的/v1
+    }
+
+    const endpoint = baseURL + apiPath;
     const request = adapter.buildRequest(messages, config);
 
     const response = await fetch(endpoint, {
@@ -50,7 +59,10 @@ export class AgentTeam {
 
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(`API错误 (${response.status}): ${errorText}`);
+      console.error(`[API 404 Debug] 请求URL: ${endpoint}`);
+      console.error(`[API 404 Debug] Base URL: ${config.baseURL}`);
+      console.error(`[API 404 Debug] API类型: ${config.apiType}`);
+      throw new Error(`API错误 (${response.status}): ${errorText} (请求URL: ${endpoint})`);
     }
 
     const reader = response.body?.getReader();
