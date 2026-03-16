@@ -224,7 +224,7 @@ export function getRolesByPersonality(personality: AgentPersonality): RoleDefini
 
 // 根据ID获取角色
 export function getRoleById(id: string): RoleDefinition | undefined {
-  return getAllRoles().find(role => role.id);
+  return getAllRoles().find(role => role.id === id);
 }
 
 // 获取默认角色

@@ -7,4 +7,5 @@ export {
   exportToEnv,
   downloadEnvFile,
   mergeWithEnvConfig,
+  saveEnvToServer,
 } from './envConfig';

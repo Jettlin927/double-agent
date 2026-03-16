@@ -1,5 +1,5 @@
 import type { AgentConfig, AgentPersonality } from '../types';
-import { getRoleById, getDefaultRole } from '../prompts';
+import { getRoleById, getAllRoles } from '../prompts';
 
 // 从 Vite 环境变量加载配置
 // Vite 的环境变量必须以 VITE_ 开头
@@ -59,19 +59,9 @@ export function loadEnvConfig(): EnvConfig {
 // 导出配置到 .env 格式
 export function exportToEnv(gentleConfig: AgentConfig, angryConfig: AgentConfig): string {
   // 尝试匹配当前配置到角色ID
-  const gentleRole = Object.values({
-    'gentle-default': '温和助手',
-    'gentle-therapist': '心理倾听者',
-    'gentle-teacher': '循循善诱的老师',
-    'gentle-friend': '知心好友',
-  }).find(() => true); // 简化处理
-
-  const angryRole = Object.values({
-    'angry-default': '暴躁助手',
-    'angry-critic': '毒舌评论家',
-    'angry-debate': '辩论对手',
-    'angry-mentor': '严师',
-  }).find(() => true);
+  const allRoles = getAllRoles();
+  const gentleRole = allRoles.find(r => r.personality === 'gentle' && r.systemPrompt === gentleConfig.systemPrompt);
+  const angryRole = allRoles.find(r => r.personality === 'angry' && r.systemPrompt === angryConfig.systemPrompt);
 
   return `# Double Agent 配置文件
 # 保存此内容到项目根目录的 .env.local 文件
@@ -86,6 +76,7 @@ VITE_GENTLE_API_KEY=${gentleConfig.apiKey}
 VITE_GENTLE_MODEL=${gentleConfig.model}
 VITE_GENTLE_TEMPERATURE=${gentleConfig.temperature}
 VITE_GENTLE_MAX_ROUNDS=${gentleConfig.maxRounds}
+VITE_GENTLE_ROLE_ID=${gentleRole?.id || ''}
 VITE_GENTLE_SYSTEM_PROMPT=${encodeURIComponent(gentleConfig.systemPrompt)}
 
 # ============================================
@@ -97,6 +88,7 @@ VITE_ANGRY_API_KEY=${angryConfig.apiKey}
 VITE_ANGRY_MODEL=${angryConfig.model}
 VITE_ANGRY_TEMPERATURE=${angryConfig.temperature}
 VITE_ANGRY_MAX_ROUNDS=${angryConfig.maxRounds}
+VITE_ANGRY_ROLE_ID=${angryRole?.id || ''}
 VITE_ANGRY_SYSTEM_PROMPT=${encodeURIComponent(angryConfig.systemPrompt)}
 `;
 }
@@ -129,4 +121,38 @@ export function mergeWithEnvConfig(
     name: baseConfig.name,
     personality: baseConfig.personality,
   };
+}
+
+// 保存配置到服务器的 .env.local 文件
+export async function saveEnvToServer(gentleConfig: AgentConfig, angryConfig: AgentConfig): Promise<{ success: boolean; message?: string; error?: string }> {
+  try {
+    const envContent = exportToEnv(gentleConfig, angryConfig);
+
+    const response = await fetch('/api/save-env', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ content: envContent }),
+    });
+
+    const result = await response.json();
+
+    if (!response.ok || !result.success) {
+      return {
+        success: false,
+        error: result.error || `Server error: ${response.status}`,
+      };
+    }
+
+    return {
+      success: true,
+      message: result.message,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to save configuration',
+    };
+  }
 }

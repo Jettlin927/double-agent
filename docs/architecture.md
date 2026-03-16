@@ -38,7 +38,15 @@ src/
 │   └── index.ts           # 导出
 ├── stores/                # 状态存储
 │   ├── agentStore.ts      # Agent配置存储（Zustand）
-│   └── debateStorage.ts   # 对话历史存储（localStorage + JSONL）
+│   ├── debateStorage.ts   # 对话历史存储（localStorage + JSONL）
+│   └── envConfig.ts       # .env配置持久化
+├── tools/                 # 工具系统
+│   ├── types.ts           # Tool类型定义
+│   ├── registry.ts        # Tool注册表和内置工具
+│   ├── parser.ts          # Tool调用解析器
+│   └── index.ts           # 导出
+├── utils/                 # 工具函数
+│   └── tokenCounter.ts    # Token计数和上下文压缩
 ├── types/                 # TypeScript类型定义
 │   └── index.ts           # 核心类型定义
 └── App.tsx                # 主应用组件
@@ -82,7 +90,94 @@ class AgentTeam {
 - **OpenAIAdapter**: 支持GPT、DeepSeek、通义千问等OpenAI格式API
 - **AnthropicAdapter**: 支持Claude原生API格式
 
-### 2. Prompt系统 (`src/prompts/`)
+### 2. 上下文管理 (`src/utils/tokenCounter.ts`)
+
+Token计数和上下文压缩工具，用于管理LLM上下文窗口：
+
+```typescript
+// Token估算
+estimateTokens(text: string): number
+estimateMessagesTokens(messages): number
+
+// 上下文限制查询
+getContextLimit(model: string): number
+CONTEXT_LIMITS: Record<string, number>  // 各模型上下文限制
+
+// 上下文统计
+calculateContextStats(messages, model): ContextStats
+
+// 上下文压缩
+compactMessages(messages, keepRecent = 4): messages
+shouldCompact(stats, threshold = 80): boolean
+```
+
+**压缩策略**：
+- 保留系统消息和最近 N 条消息
+- 中间消息生成摘要替换
+- 可配置压缩阈值（默认80%）
+
+### 3. Tool系统 (`src/tools/`)
+
+Agent可调用工具的基础架构，详见 [tools.md](./tools.md)。
+
+```typescript
+// Tool定义
+interface ToolDefinition {
+  name: string;
+  description: string;
+  parameters: ToolParameter[];
+}
+
+// Tool调用
+interface ToolCall {
+  id: string;
+  tool: string;
+  arguments: Record<string, unknown>;
+  agentId: string;
+}
+
+// Tool注册表
+class ToolRegistry {
+  register(definition, handler)
+  execute(toolName, args, context): Promise<ToolResult>
+  generateToolsPrompt(): string
+}
+```
+
+**内置工具**：
+- `web_search` - 网络搜索
+- `execute_code` - 代码执行
+- `ask_other_agent` - 询问另一个Agent
+- `summarize` - 对话总结
+- `fact_check` - 事实核查
+- `calculate` - 精确计算
+- `memory` - 信息存储/检索
+
+### 4. .env配置持久化 (`src/stores/envConfig.ts` + `vite-env-save-plugin.ts`)
+
+支持通过 `.env.local` 文件持久化Agent配置：
+
+```typescript
+// 从环境变量加载配置
+loadEnvConfig(): { gentle, angry }
+hasEnvConfig(): boolean
+
+// 导出配置为.env格式
+exportToEnv(gentleConfig, angryConfig): string
+downloadEnvFile(content, filename)
+
+// 保存到服务器
+saveEnvToServer(gentleConfig, angryConfig): Promise<{ success, message }>
+
+// 合并配置（env优先级高）
+mergeWithEnvConfig(baseConfig, personality): AgentConfig
+```
+
+**Vite插件** (`vite-env-save-plugin.ts`)：
+- 开发服务器提供 `/api/save-env` 端点
+- 接收POST请求将配置写入 `.env.local`
+
+### 5. Prompt系统 (`src/prompts/`)
 
 #### 角色定义 (`roles.ts`)
 预定义多种角色人格，每个角色包含系统提示词和结束判断提示词：
@@ -139,7 +234,7 @@ interface ModelPreset {
 
 **使用方式**：在配置弹窗中选择角色和模型，自动填充对应的 systemPrompt 和 API 参数。高级设置可手动调整细节。
 
-### 2. 状态管理
+### 6. 状态管理
 
 #### Agent配置存储 (`src/stores/agentStore.ts`)
 使用Zustand + persist中间件：
@@ -165,7 +260,7 @@ class DebateStorage {
 }
 ```
 
-### 3. JSONL格式规范
+### 7. JSONL格式规范
 
 每行一个JSON对象，第一行为metadata，后续为round数据：
 
@@ -179,7 +274,7 @@ class DebateStorage {
 - `gentle`: 温和Agent的回复（单Agent模式下angry可为空）
 - `angry`: 暴躁Agent的回复
 
-### 4. UI组件架构
+### 8. UI组件架构
 
 #### 模式切换 (`Sidebar.tsx`)
 侧边栏提供模式切换按钮：
@@ -192,7 +287,7 @@ class DebateStorage {
 - **单Agent**: 单个面板居中显示（最大宽度768px）
 - **双Agent**: 左右50/50分栏
 
-### 5. 数据流
+### 9. 数据流
 
 ```
 用户输入 → useAgentTeam.runDebate()
@@ -208,7 +303,7 @@ class DebateStorage {
          保存到DebateStorage (localStorage)
 ```
 
-### 6. 会话恢复
+### 10. 会话恢复
 
 加载历史会话时：
 1. 从localStorage读取session数据
@@ -223,12 +318,16 @@ class DebateStorage {
 |------|------|----------|
 | `src/agents/AgentTeam.ts` | Agent协调核心 | `AgentTeam` 类 |
 | `src/stores/debateStorage.ts` | 持久化存储 | `debateStorage` 实例 |
+| `src/stores/envConfig.ts` | .env配置管理 | `loadEnvConfig`, `saveEnvToServer` |
 | `src/hooks/useAgentTeam.ts` | React状态集成 | `useAgentTeam` Hook |
 | `src/types/index.ts` | 类型定义 | `DebateSession`, `AgentMode` |
 | `src/components/Sidebar.tsx` | 会话管理UI | `Sidebar` 组件 |
 | `src/components/ConfigModal.tsx` | 配置弹窗 | 角色和模型选择UI |
 | `src/prompts/roles.ts` | 角色定义 | `GENTLE_ROLES`, `ANGRY_ROLES` |
 | `src/prompts/models.ts` | 模型预设 | `ALL_MODEL_PRESETS` |
+| `src/tools/*.ts` | 工具系统 | `ToolRegistry`, `toolRegistry` |
+| `src/utils/tokenCounter.ts` | Token计数 | `estimateTokens`, `compactMessages` |
+| `vite-env-save-plugin.ts` | Vite插件 | `envSavePlugin` |
 | `src/App.tsx` | 主应用 | 布局与模式切换逻辑 |
 
 ## 扩展点
@@ -240,3 +339,5 @@ class DebateStorage {
 5. **添加新角色**：在 `src/prompts/roles.ts` 中添加新的 `RoleDefinition`
 6. **添加新模型**：在 `src/prompts/models.ts` 中添加新的 `ModelPreset`
 7. **自定义角色**：未来可支持用户自定义角色并保存到localStorage
+8. **添加新工具**：在 `src/tools/registry.ts` 中定义 `ToolDefinition` 和 `ToolHandler`，调用 `toolRegistry.register()` 注册
+9. **自定义上下文压缩策略**：修改 `src/utils/tokenCounter.ts` 中的 `compactMessages` 函数实现自定义压缩逻辑

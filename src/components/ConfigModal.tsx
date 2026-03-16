@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { X, Settings, AlertCircle, ChevronDown, User, Bot, Sparkles, Zap, Download, FileCode } from 'lucide-react';
+import { X, Settings, AlertCircle, ChevronDown, User, Bot, Sparkles, Zap, Download, FileCode, Save, Check, AlertTriangle } from 'lucide-react';
 import type { AgentConfig, AgentPersonality, ApiType } from '../types';
 import { GENTLE_SYSTEM_PROMPT, ANGRY_SYSTEM_PROMPT, validateConfig } from '../agents/AgentConfig';
 import {
@@ -10,7 +10,7 @@ import {
   type RoleDefinition,
   type ModelPreset,
 } from '../prompts';
-import { exportToEnv, downloadEnvFile, hasEnvConfig } from '../stores';
+import { exportToEnv, downloadEnvFile, hasEnvConfig, saveEnvToServer } from '../stores';
 
 interface ConfigModalProps {
   isOpen: boolean;
@@ -325,9 +325,31 @@ export function ConfigModal({
   const [activeTab, setActiveTab] = useState<TabType>('gentle');
   const usingEnvConfig = hasEnvConfig();
 
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle');
+  const [saveMessage, setSaveMessage] = useState('');
+
   const handleExportEnv = () => {
     const envContent = exportToEnv(gentleConfig, angryConfig);
     downloadEnvFile(envContent, '.env.local');
+  };
+
+  const handleSaveEnv = async () => {
+    setSaveStatus('saving');
+    const result = await saveEnvToServer(gentleConfig, angryConfig);
+
+    if (result.success) {
+      setSaveStatus('success');
+      setSaveMessage(result.message || '配置已保存到 .env.local');
+    } else {
+      setSaveStatus('error');
+      setSaveMessage(result.error || '保存失败');
+    }
+
+    // 3秒后重置状态
+    setTimeout(() => {
+      setSaveStatus('idle');
+      setSaveMessage('');
+    }, 3000);
   };
 
   if (!isOpen) return null;
@@ -386,21 +408,58 @@ export function ConfigModal({
         </div>
 
         <div className="flex items-center justify-between px-6 py-4 border-t border-gray-200 bg-gray-50">
-          {/* Left side: Env config indicator and export */}
+          {/* Left side: Env config indicator, save and export buttons */}
           <div className="flex items-center gap-3">
-            {usingEnvConfig ? (
+            {usingEnvConfig && (
               <div className="flex items-center gap-2 px-3 py-1.5 bg-green-100 text-green-700 rounded-lg text-sm">
                 <FileCode className="w-4 h-4" />
                 已加载 .env.local 配置
               </div>
-            ) : (
-              <button
-                onClick={handleExportEnv}
-                className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors"
-              >
-                <Download className="w-4 h-4" />
-                导出配置为 .env
-              </button>
+            )}
+            <button
+              onClick={handleSaveEnv}
+              disabled={saveStatus === 'saving'}
+              className={`flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
+                saveStatus === 'success'
+                  ? 'bg-green-100 text-green-700'
+                  : saveStatus === 'error'
+                    ? 'bg-red-100 text-red-700'
+                    : 'text-blue-600 hover:text-blue-700 hover:bg-blue-50'
+              }`}
+            >
+              {saveStatus === 'saving' ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                  保存中...
+                </>
+              ) : saveStatus === 'success' ? (
+                <>
+                  <Check className="w-4 h-4" />
+                  已保存
+                </>
+              ) : saveStatus === 'error' ? (
+                <>
+                  <AlertTriangle className="w-4 h-4" />
+                  失败
+                </>
+              ) : (
+                <>
+                  <Save className="w-4 h-4" />
+                  保存到 .env
+                </>
+              )}
+            </button>
+            <button
+              onClick={handleExportEnv}
+              className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-gray-600 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+            >
+              <Download className="w-4 h-4" />
+              导出
+            </button>
+            {saveMessage && saveStatus !== 'idle' && saveStatus !== 'saving' && (
+              <span className={`text-xs ${saveStatus === 'success' ? 'text-green-600' : 'text-red-600'}`}>
+                {saveMessage}
+              </span>
             )}
           </div>
 
