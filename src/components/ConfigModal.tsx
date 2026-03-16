@@ -1,7 +1,15 @@
 import { useState } from 'react';
-import { X, Settings, AlertCircle } from 'lucide-react';
+import { X, Settings, AlertCircle, ChevronDown, User, Bot, Sparkles, Zap } from 'lucide-react';
 import type { AgentConfig, AgentPersonality, ApiType } from '../types';
 import { GENTLE_SYSTEM_PROMPT, ANGRY_SYSTEM_PROMPT, validateConfig } from '../agents/AgentConfig';
+import {
+  getRolesByPersonality,
+  getRoleById,
+  getPresetsByProvider,
+  getPresetById,
+  type RoleDefinition,
+  type ModelPreset,
+} from '../prompts';
 
 interface ConfigModalProps {
   isOpen: boolean;
@@ -14,6 +22,81 @@ interface ConfigModalProps {
 
 type TabType = 'gentle' | 'angry';
 
+// Role Card Component
+function RoleCard({
+  role,
+  isSelected,
+  onClick,
+}: {
+  role: RoleDefinition;
+  isSelected: boolean;
+  onClick: () => void;
+}) {
+  const isGentle = role.personality === 'gentle';
+
+  return (
+    <button
+      onClick={onClick}
+      className={`w-full text-left p-3 rounded-xl border-2 transition-all ${
+        isSelected
+          ? isGentle
+            ? 'border-amber-400 bg-amber-50'
+            : 'border-rose-400 bg-rose-50'
+          : 'border-gray-200 hover:border-gray-300 bg-white'
+      }`}
+    >
+      <div className="flex items-center gap-2 mb-1">
+        {isGentle ? (
+          <Sparkles className={`w-4 h-4 ${isSelected ? 'text-amber-500' : 'text-gray-400'}`} />
+        ) : (
+          <Zap className={`w-4 h-4 ${isSelected ? 'text-rose-500' : 'text-gray-400'}`} />
+        )}
+        <span className={`font-medium ${isSelected ? (isGentle ? 'text-amber-700' : 'text-rose-700') : 'text-gray-700'}`}>
+          {role.name}
+        </span>
+      </div>
+      <p className="text-xs text-gray-500 line-clamp-2">{role.description}</p>
+    </button>
+  );
+}
+
+// Model Preset Card Component
+function ModelPresetCard({
+  preset,
+  isSelected,
+  onClick,
+}: {
+  preset: ModelPreset;
+  isSelected: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`w-full text-left p-3 rounded-xl border-2 transition-all ${
+        isSelected
+          ? 'border-blue-400 bg-blue-50'
+          : 'border-gray-200 hover:border-gray-300 bg-white'
+      }`}
+    >
+      <div className="flex items-center justify-between mb-1">
+        <span className={`font-medium ${isSelected ? 'text-blue-700' : 'text-gray-700'}`}>
+          {preset.name}
+        </span>
+        <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full">
+          {preset.provider}
+        </span>
+      </div>
+      <p className="text-xs text-gray-500">{preset.description}</p>
+      <div className="mt-2 flex items-center gap-2 text-xs text-gray-400">
+        <span className="font-mono">{preset.model}</span>
+        <span>·</span>
+        <span>Temp: {preset.temperature}</span>
+      </div>
+    </button>
+  );
+}
+
 function ConfigForm({
   config,
   onUpdate,
@@ -23,10 +106,35 @@ function ConfigForm({
   onUpdate: (updates: Partial<AgentConfig>) => void;
   label: string;
 }) {
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const error = validateConfig(config);
+  const isGentle = config.personality === 'gentle';
+
+  // Get available roles and presets
+  const roles = getRolesByPersonality(config.personality);
+  const presetsByProvider = getPresetsByProvider();
+
+  // Find current role and preset
+  const currentRole = roles.find(r => config.systemPrompt === r.systemPrompt) || roles[0];
+  const currentPreset = Object.values(presetsByProvider)
+    .flat()
+    .find(p => p.baseURL === config.baseURL && p.model === config.model && p.apiType === config.apiType);
+
+  const handleRoleSelect = (role: RoleDefinition) => {
+    onUpdate({ systemPrompt: role.systemPrompt });
+  };
+
+  const handlePresetSelect = (preset: ModelPreset) => {
+    onUpdate({
+      apiType: preset.apiType,
+      baseURL: preset.baseURL,
+      model: preset.model,
+      temperature: preset.temperature,
+    });
+  };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       {error && (
         <div className="flex items-center gap-2 p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-yellow-700 text-sm">
           <AlertCircle className="w-4 h-4" />
@@ -34,44 +142,60 @@ function ConfigForm({
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-4">
-        <div className="space-y-2">
-          <label className="text-sm font-medium text-gray-700">API 类型</label>
-          <select
-            value={config.apiType}
-            onChange={(e) => onUpdate({ apiType: e.target.value as ApiType })}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-          >
-            <option value="openai">OpenAI 格式</option>
-            <option value="anthropic">Anthropic 原生</option>
-          </select>
-        </div>
-
-        <div className="space-y-2">
-          <label className="text-sm font-medium text-gray-700">模型名称</label>
-          <input
-            type="text"
-            value={config.model}
-            onChange={(e) => onUpdate({ model: e.target.value })}
-            placeholder="gpt-4o / claude-3-sonnet-20240229"
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-          />
+      {/* Role Selection */}
+      <div className="space-y-3">
+        <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
+          {isGentle ? <Sparkles className="w-4 h-4 text-amber-500" /> : <Zap className="w-4 h-4 text-rose-500" />}
+          选择角色
+        </label>
+        <div className="grid grid-cols-2 gap-3">
+          {roles.map((role) => (
+            <RoleCard
+              key={role.id}
+              role={role}
+              isSelected={currentRole?.id === role.id}
+              onClick={() => handleRoleSelect(role)}
+            />
+          ))}
         </div>
       </div>
 
-      <div className="space-y-2">
-        <label className="text-sm font-medium text-gray-700">Base URL</label>
-        <input
-          type="text"
-          value={config.baseURL}
-          onChange={(e) => onUpdate({ baseURL: e.target.value })}
-          placeholder="https://api.openai.com"
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-        />
+      {/* Model Preset Selection */}
+      <div className="space-y-3">
+        <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
+          <Bot className="w-4 h-4 text-blue-500" />
+          选择模型
+        </label>
+        <div className="space-y-4 max-h-48 overflow-y-auto pr-1">
+          {Object.entries(presetsByProvider).map(([provider, presets]) => (
+            <div key={provider}>
+              <div className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-2 px-1">
+                {provider}
+              </div>
+              <div className="grid grid-cols-1 gap-2">
+                {presets.map((preset) => (
+                  <ModelPresetCard
+                    key={preset.id}
+                    preset={preset}
+                    isSelected={
+                      currentPreset?.id === preset.id ||
+                      (preset.baseURL === config.baseURL && preset.model === config.model)
+                    }
+                    onClick={() => handlePresetSelect(preset)}
+                  />
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
 
+      {/* API Key Input */}
       <div className="space-y-2">
-        <label className="text-sm font-medium text-gray-700">API Key</label>
+        <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
+          <User className="w-4 h-4 text-gray-400" />
+          API Key
+        </label>
         <input
           type="password"
           value={config.apiKey}
@@ -81,60 +205,110 @@ function ConfigForm({
         />
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
-        <div className="space-y-2">
-          <label className="text-sm font-medium text-gray-700">
-            Temperature: {config.temperature}
-          </label>
-          <input
-            type="range"
-            min="0"
-            max="2"
-            step="0.1"
-            value={config.temperature}
-            onChange={(e) => onUpdate({ temperature: parseFloat(e.target.value) })}
-            className="w-full"
-          />
-        </div>
+      {/* Advanced Settings Toggle */}
+      <button
+        onClick={() => setShowAdvanced(!showAdvanced)}
+        className="flex items-center gap-2 text-sm text-gray-600 hover:text-gray-800"
+      >
+        <ChevronDown className={`w-4 h-4 transition-transform ${showAdvanced ? 'rotate-180' : ''}`} />
+        高级设置
+      </button>
 
-        <div className="space-y-2">
-          <label className="text-sm font-medium text-gray-700">
-            最大轮数: {config.maxRounds}
-          </label>
-          <input
-            type="range"
-            min="1"
-            max="5"
-            step="1"
-            value={config.maxRounds}
-            onChange={(e) => onUpdate({ maxRounds: parseInt(e.target.value) })}
-            className="w-full"
-          />
-        </div>
-      </div>
+      {/* Advanced Settings */}
+      {showAdvanced && (
+        <div className="space-y-4 pt-4 border-t border-gray-200">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-gray-700">API 类型</label>
+              <select
+                value={config.apiType}
+                onChange={(e) => onUpdate({ apiType: e.target.value as ApiType })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              >
+                <option value="openai">OpenAI 格式</option>
+                <option value="anthropic">Anthropic 原生</option>
+              </select>
+            </div>
 
-      <div className="space-y-2">
-        <label className="text-sm font-medium text-gray-700">系统提示词</label>
-        <textarea
-          value={config.systemPrompt}
-          onChange={(e) => onUpdate({ systemPrompt: e.target.value })}
-          rows={6}
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-mono text-sm"
-        />
-        <button
-          onClick={() =>
-            onUpdate({
-              systemPrompt:
-                config.personality === 'gentle'
-                  ? GENTLE_SYSTEM_PROMPT
-                  : ANGRY_SYSTEM_PROMPT,
-            })
-          }
-          className="text-sm text-blue-600 hover:text-blue-700"
-        >
-          恢复默认提示词
-        </button>
-      </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-gray-700">Base URL</label>
+              <input
+                type="text"
+                value={config.baseURL}
+                onChange={(e) => onUpdate({ baseURL: e.target.value })}
+                placeholder="https://api.openai.com"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              />
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-gray-700">模型名称</label>
+            <input
+              type="text"
+              value={config.model}
+              onChange={(e) => onUpdate({ model: e.target.value })}
+              placeholder="gpt-4o / claude-3-sonnet-20240229"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-gray-700">
+                Temperature: {config.temperature}
+              </label>
+              <input
+                type="range"
+                min="0"
+                max="2"
+                step="0.1"
+                value={config.temperature}
+                onChange={(e) => onUpdate({ temperature: parseFloat(e.target.value) })}
+                className="w-full"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-gray-700">
+                最大轮数: {config.maxRounds}
+              </label>
+              <input
+                type="range"
+                min="1"
+                max="5"
+                step="1"
+                value={config.maxRounds}
+                onChange={(e) => onUpdate({ maxRounds: parseInt(e.target.value) })}
+                className="w-full"
+              />
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-gray-700">系统提示词</label>
+            <textarea
+              value={config.systemPrompt}
+              onChange={(e) => onUpdate({ systemPrompt: e.target.value })}
+              rows={4}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-mono text-sm"
+            />
+            <button
+              onClick={() =>
+                onUpdate({
+                  systemPrompt:
+                    config.personality === 'gentle'
+                      ? GENTLE_SYSTEM_PROMPT
+                      : ANGRY_SYSTEM_PROMPT,
+                })
+              }
+              className="text-sm text-blue-600 hover:text-blue-700"
+            >
+              恢复默认提示词
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

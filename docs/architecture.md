@@ -27,11 +27,15 @@ src/
 ├── components/            # UI组件
 │   ├── Sidebar.tsx        # 侧边栏（会话列表+模式切换）
 │   ├── AgentPanel.tsx     # Agent对话面板
-│   ├── ConfigModal.tsx    # 配置弹窗
+│   ├── ConfigModal.tsx    # 配置弹窗（支持角色和模型选择）
 │   ├── Header.tsx         # 顶部导航
 │   └── UserInput.tsx      # 用户输入框
 ├── hooks/                 # React Hooks
 │   └── useAgentTeam.ts    # Agent团队状态管理Hook
+├── prompts/               # Prompt和模型预设
+│   ├── roles.ts           # 角色定义（温和/暴躁各4种角色）
+│   ├── models.ts          # 模型预设（OpenAI/Anthropic/DeepSeek/通义/Kimi/GLM）
+│   └── index.ts           # 导出
 ├── stores/                # 状态存储
 │   ├── agentStore.ts      # Agent配置存储（Zustand）
 │   └── debateStorage.ts   # 对话历史存储（localStorage + JSONL）
@@ -71,6 +75,58 @@ class AgentTeam {
 #### API适配器
 - **OpenAIAdapter**: 支持GPT、DeepSeek、通义千问等OpenAI格式API
 - **AnthropicAdapter**: 支持Claude原生API格式
+
+### 2. Prompt系统 (`src/prompts/`)
+
+#### 角色定义 (`roles.ts`)
+预定义多种角色人格，分为温和型和暴躁型：
+
+```typescript
+interface RoleDefinition {
+  id: string;
+  name: string;
+  personality: 'gentle' | 'angry';
+  description: string;
+  systemPrompt: string;
+}
+
+// 温和型角色
+- gentle-default: 温和助手（默认）
+- gentle-therapist: 心理倾听者
+- gentle-teacher: 循循善诱的老师
+- gentle-friend: 知心好友
+
+// 暴躁型角色
+- angry-default: 暴躁助手（默认）
+- angry-critic: 毒舌评论家
+- angry-debate: 辩论对手
+- angry-mentor: 严师
+```
+
+#### 模型预设 (`models.ts`)
+预配置主流AI服务商的模型参数：
+
+```typescript
+interface ModelPreset {
+  id: string;
+  name: string;
+  provider: string;      // OpenAI/Anthropic/DeepSeek/阿里云/智谱等
+  apiType: 'openai' | 'anthropic';
+  baseURL: string;
+  model: string;
+  temperature: number;
+}
+
+// 支持的提供商
+- OpenAI: GPT-4o, GPT-4o Mini, GPT-4 Turbo
+- Anthropic: Claude 3.5 Sonnet, Claude 3 Opus/Sonnet
+- DeepSeek: DeepSeek Chat, DeepSeek Reasoner
+- 阿里云: 通义千问 Max/Plus/Turbo
+- Moonshot: Kimi, Kimi K1
+- 智谱AI: GLM-4, GLM-4 Flash
+```
+
+**使用方式**：在配置弹窗中选择角色和模型，自动填充对应的 systemPrompt 和 API 参数。高级设置可手动调整细节。
 
 ### 2. 状态管理
 
@@ -159,6 +215,9 @@ class DebateStorage {
 | `src/hooks/useAgentTeam.ts` | React状态集成 | `useAgentTeam` Hook |
 | `src/types/index.ts` | 类型定义 | `DebateSession`, `AgentMode` |
 | `src/components/Sidebar.tsx` | 会话管理UI | `Sidebar` 组件 |
+| `src/components/ConfigModal.tsx` | 配置弹窗 | 角色和模型选择UI |
+| `src/prompts/roles.ts` | 角色定义 | `GENTLE_ROLES`, `ANGRY_ROLES` |
+| `src/prompts/models.ts` | 模型预设 | `ALL_MODEL_PRESETS` |
 | `src/App.tsx` | 主应用 | 布局与模式切换逻辑 |
 
 ## 扩展点
@@ -167,3 +226,6 @@ class DebateStorage {
 2. **支持新API格式**：实现 `APIAdapter` 接口
 3. **自定义持久化**：替换 `DebateStorage` 中的localStorage为后端API
 4. **添加导出格式**：在 `DebateStorage` 中添加新方法（如exportToMarkdown）
+5. **添加新角色**：在 `src/prompts/roles.ts` 中添加新的 `RoleDefinition`
+6. **添加新模型**：在 `src/prompts/models.ts` 中添加新的 `ModelPreset`
+7. **自定义角色**：未来可支持用户自定义角色并保存到localStorage
