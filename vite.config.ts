@@ -7,6 +7,13 @@ export default defineConfig({
   plugins: [react(), envSavePlugin()],
   server: {
     proxy: {
+      // Backend API proxy (new)
+      '/api': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+        // Don't rewrite - backend expects /api prefix
+      },
+      // Keep existing proxies for backward compatibility
       '/api/openai': {
         target: 'https://api.openai.com',
         changeOrigin: true,

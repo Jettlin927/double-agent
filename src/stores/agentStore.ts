@@ -29,7 +29,7 @@ const usingEnvConfig = hasEnvConfig();
 
 export const useAgentStore = create<AgentState>()(
   persist(
-    (set, get) => ({
+    (set) => ({
       // 初始配置：优先从 env 加载，否则使用默认值
       gentleConfig: mergeWithEnvConfig(createDefaultGentleConfig(), 'gentle'),
       angryConfig: mergeWithEnvConfig(createDefaultAngryConfig(), 'angry'),

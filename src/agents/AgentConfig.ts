@@ -1,4 +1,4 @@
-import type { AgentConfig, AgentPersonality, ApiType } from '../types';
+import type { AgentConfig, AgentPersonality } from '../types';
 
 export const GENTLE_SYSTEM_PROMPT = `你是一个温和、友善的AI助手。你的性格特点：
 - 说话温柔、耐心、富有同理心

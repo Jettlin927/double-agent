@@ -97,7 +97,7 @@ export class AgentTeam {
   // 手动压缩上下文
   compactContext(): boolean {
     const originalLength = this.fullMessageHistory.length;
-    this.fullMessageHistory = compactMessages(this.fullMessageHistory, 4);
+    this.fullMessageHistory = compactMessages(this.fullMessageHistory, 4) as Message[];
     const wasCompacted = this.fullMessageHistory.length < originalLength;
 
     this.updateContextStats();
@@ -144,7 +144,7 @@ export class AgentTeam {
           }
         });
       } else {
-        session.rounds.forEach((round, index) => {
+        session.rounds.forEach((round) => {
           messages.push({
             role: 'assistant',
             content: round.gentleResponse.content,
@@ -350,7 +350,7 @@ export class AgentTeam {
     this.reset();
     this.mode = 'single';
 
-    const session = debateStorage.createSession(
+    const session = await debateStorage.createSession(
       userQuestion,
       this.gentleConfig,
       this.angryConfig,
@@ -415,7 +415,9 @@ export class AgentTeam {
       };
 
       this.debateHistory.push(round);
-      debateStorage.addRound(this.currentSessionId, round);
+      if (this.currentSessionId) {
+        debateStorage.addRound(this.currentSessionId, round);
+      }
 
       // 检查是否应该结束（第一轮不检查，至少需要一轮回复）
       if (this.currentRound >= 1) {
@@ -450,7 +452,7 @@ export class AgentTeam {
     this.reset();
     this.mode = 'double';
 
-    const session = debateStorage.createSession(
+    const session = await debateStorage.createSession(
       userQuestion,
       this.gentleConfig,
       this.angryConfig,
@@ -555,7 +557,9 @@ export class AgentTeam {
       };
 
       this.debateHistory.push(round);
-      debateStorage.addRound(this.currentSessionId, round);
+      if (this.currentSessionId) {
+        debateStorage.addRound(this.currentSessionId, round);
+      }
 
       // 检查是否应该结束（第二轮开始检查）
       if (this.currentRound >= 2) {

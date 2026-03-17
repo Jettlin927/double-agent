@@ -1,5 +1,4 @@
 import type { AgentPersonality } from '../types';
-import { createToolSystemPrompt } from '../tools';
 
 export interface RoleDefinition {
   id: string;

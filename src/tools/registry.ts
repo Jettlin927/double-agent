@@ -5,7 +5,6 @@ import type {
   ToolResult,
   WebSearchArgs,
   CodeExecutionArgs,
-  FileOperationArgs,
   AskOtherAgentArgs,
   SummarizeArgs,
   FactCheckArgs,
@@ -31,7 +30,7 @@ export class ToolRegistry {
     return Array.from(this.tools.values());
   }
 
-  getToolsForAgent(personality: 'gentle' | 'angry'): ToolDefinition[] {
+  getToolsForAgent(_personality: 'gentle' | 'angry'): ToolDefinition[] {
     // 可以在这里根据Agent性格过滤工具
     return this.getAllTools();
   }
@@ -120,7 +119,7 @@ const webSearchTool: ToolDefinition = {
 };
 
 const webSearchHandler: ToolHandler = async (args) => {
-  const { query, limit = 5 } = args as WebSearchArgs;
+  const { query } = args as unknown as WebSearchArgs;
 
   // 注意：这里需要接入实际的搜索引擎API
   // 例如：SerpAPI, Bing Search API, Google Custom Search等
@@ -171,7 +170,7 @@ const codeExecutionTool: ToolDefinition = {
 };
 
 const codeExecutionHandler: ToolHandler = async (args) => {
-  const { language, code, timeout = 30 } = args as CodeExecutionArgs;
+  const { language, code } = args as unknown as CodeExecutionArgs;
 
   // 注意：实际实现需要安全的代码执行环境
   // 可以使用 WebContainer, Docker, 或沙箱环境
@@ -210,7 +209,7 @@ const askOtherAgentTool: ToolDefinition = {
 };
 
 const askOtherAgentHandler: ToolHandler = async (args, context) => {
-  const { question, context: extraContext } = args as AskOtherAgentArgs;
+  const { question, context: extraContext } = args as unknown as AskOtherAgentArgs;
 
   if (!context.askOtherAgent) {
     return {
@@ -260,7 +259,7 @@ const summarizeTool: ToolDefinition = {
 };
 
 const summarizeHandler: ToolHandler = async (args, context) => {
-  const { format, focus } = args as SummarizeArgs;
+  const { format, focus } = args as unknown as SummarizeArgs;
   const history = context.getConversationHistory?.() || '';
 
   // 这里可以实现更复杂的总结逻辑
@@ -299,7 +298,7 @@ const factCheckTool: ToolDefinition = {
 };
 
 const factCheckHandler: ToolHandler = async (args) => {
-  const { claim, evidence } = args as FactCheckArgs;
+  const { claim, evidence } = args as unknown as FactCheckArgs;
 
   // 实际实现可以：
   // 1. 使用web_search搜索相关信息
@@ -333,7 +332,7 @@ const calculateTool: ToolDefinition = {
 };
 
 const calculateHandler: ToolHandler = async (args) => {
-  const { expression } = args as CalculateArgs;
+  const { expression } = args as unknown as CalculateArgs;
 
   try {
     // 使用 Function 构造器安全地计算表达式
@@ -397,7 +396,7 @@ const memoryTool: ToolDefinition = {
 const memoryStore: Map<string, { value: string; category: string; timestamp: number }> = new Map();
 
 const memoryHandler: ToolHandler = async (args) => {
-  const { action, key, value, category = 'general' } = args as MemoryArgs;
+  const { action, key, value, category = 'general' } = args as unknown as MemoryArgs;
 
   switch (action) {
     case 'store':

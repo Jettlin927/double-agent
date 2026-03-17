@@ -28,43 +28,60 @@ export function Sidebar({
 }: SidebarProps) {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
 
-  const handleExport = (session: DebateSession) => {
-    const jsonl = debateStorage.exportToJSONL(session.id);
-    const blob = new Blob([jsonl], { type: 'application/jsonl' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `debate-${session.title.slice(0, 30).replace(/\s+/g, '-')}.jsonl`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+  const handleExport = async (session: DebateSession) => {
+    try {
+      const jsonl = await debateStorage.exportToJSONL(session.id);
+      const blob = new Blob([jsonl], { type: 'application/jsonl' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `debate-${session.title.slice(0, 30).replace(/\s+/g, '-')}.jsonl`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Failed to export session:', err);
+      alert('导出失败，请重试');
+    }
   };
 
-  const handleExportAll = () => {
-    const jsonl = debateStorage.exportAllToJSONL();
-    const blob = new Blob([jsonl], { type: 'application/jsonl' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `all-debates-${new Date().toISOString().split('T')[0]}.jsonl`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+  const handleExportAll = async () => {
+    try {
+      const jsonl = await debateStorage.exportAllToJSONL();
+      const blob = new Blob([jsonl], { type: 'application/jsonl' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `all-debates-${new Date().toISOString().split('T')[0]}.jsonl`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Failed to export all sessions:', err);
+      alert('导出失败，请重试');
+    }
   };
 
-  const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = (event) => {
+    reader.onload = async (event) => {
       const content = event.target?.result as string;
       if (content) {
-        const session = debateStorage.importFromJSONL(content);
-        if (session) {
-          onLoadSession(session.id);
+        try {
+          const session = await debateStorage.importFromJSONL(content);
+          if (session) {
+            onLoadSession(session.id);
+          } else {
+            alert('导入失败，请检查文件格式');
+          }
+        } catch (err) {
+          console.error('Failed to import session:', err);
+          alert('导入失败，请检查文件格式');
         }
       }
     };

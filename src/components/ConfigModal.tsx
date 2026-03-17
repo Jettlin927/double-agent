@@ -1,12 +1,10 @@
 import { useState } from 'react';
 import { X, Settings, AlertCircle, ChevronDown, User, Bot, Sparkles, Zap, Download, FileCode, Save, Check, AlertTriangle } from 'lucide-react';
-import type { AgentConfig, AgentPersonality, ApiType } from '../types';
+import type { AgentConfig, ApiType } from '../types';
 import { GENTLE_SYSTEM_PROMPT, ANGRY_SYSTEM_PROMPT, validateConfig } from '../agents/AgentConfig';
 import {
   getRolesByPersonality,
-  getRoleById,
   getPresetsByProvider,
-  getPresetById,
   type RoleDefinition,
   type ModelPreset,
 } from '../prompts';
@@ -101,11 +99,9 @@ function ModelPresetCard({
 function ConfigForm({
   config,
   onUpdate,
-  label,
 }: {
   config: AgentConfig;
   onUpdate: (updates: Partial<AgentConfig>) => void;
-  label: string;
 }) {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const error = validateConfig(config);
@@ -401,9 +397,9 @@ export function ConfigModal({
 
         <div className="p-6 overflow-y-auto max-h-[60vh]">
           {activeTab === 'gentle' ? (
-            <ConfigForm config={gentleConfig} onUpdate={onUpdateGentle} label="温和 Agent" />
+            <ConfigForm config={gentleConfig} onUpdate={onUpdateGentle} />
           ) : (
-            <ConfigForm config={angryConfig} onUpdate={onUpdateAngry} label="暴躁 Agent" />
+            <ConfigForm config={angryConfig} onUpdate={onUpdateAngry} />
           )}
         </div>
 

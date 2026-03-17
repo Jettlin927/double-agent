@@ -1,9 +1,7 @@
-import { useCallback, useRef, useState, useEffect } from 'react';
-import { AgentTeam } from '../agents/AgentTeam';
-import type { StreamCallback, ContextManagerState } from '../agents/AgentTeam';
-import type { AgentConfig, StreamChunk, DebateSession, AgentMode } from '../types';
+import { useCallback, useState, useEffect, useRef } from 'react';
+import type { StreamChunk, DebateSession, AgentMode, AgentConfig } from '../types';
+import { apiClient } from '../api/client';
 import { debateStorage } from '../stores/debateStorage';
-import type { ContextStats } from '../utils/tokenCounter';
 
 interface UseAgentTeamOptions {
   gentleConfig: AgentConfig;
@@ -18,13 +16,13 @@ interface UseAgentTeamReturn {
   currentRound: number;
   totalRounds: number;
   isEnding: boolean;
-  contextStats: ContextManagerState | null;
+  contextStats: { stats: { usagePercent: number }; isCompacted: boolean } | null;
   currentSession: DebateSession | null;
   sessions: DebateSession[];
   mode: AgentMode;
   setMode: (mode: AgentMode) => void;
   runDebate: (question: string) => Promise<void>;
-  compactContext: () => boolean;
+  compactContext: () => boolean; // Deprecated - backend handles context
   loadSession: (sessionId: string) => void;
   createNewSession: () => void;
   deleteSession: (sessionId: string) => void;
@@ -43,57 +41,32 @@ export function useAgentTeam(options: UseAgentTeamOptions): UseAgentTeamReturn {
   const [currentRound, setCurrentRound] = useState(0);
   const [totalRounds, setTotalRounds] = useState(0);
   const [isEnding, setIsEnding] = useState(false);
-  const [contextStats, setContextStats] = useState<ContextManagerState | null>(null);
 
-  const agentTeamRef = useRef<AgentTeam | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  // Initialize AgentTeam
-  if (!agentTeamRef.current) {
-    agentTeamRef.current = new AgentTeam(options.gentleConfig, options.angryConfig);
-  } else {
-    agentTeamRef.current.updateConfigs(options.gentleConfig, options.angryConfig);
-  }
-
   // Load sessions list
-  const refreshSessions = useCallback(() => {
-    setSessions(debateStorage.getAllSessions());
+  const refreshSessions = useCallback(async () => {
+    try {
+      const sessions = await debateStorage.getAllSessions();
+      setSessions(sessions);
+    } catch (err) {
+      console.error('Failed to refresh sessions:', err);
+    }
   }, []);
 
   // Initial load
   useEffect(() => {
     refreshSessions();
-    const current = debateStorage.getCurrentSession();
-    if (current) {
-      setCurrentSession(current);
-      setMode(current.mode || 'double');
-      setTotalRounds(current.rounds.length);
-      agentTeamRef.current?.loadSession(current);
-    }
+    const loadCurrentSession = async () => {
+      const current = await debateStorage.getCurrentSession();
+      if (current) {
+        setCurrentSession(current);
+        setMode(current.mode || 'double');
+        setTotalRounds(current.rounds.length);
+      }
+    };
+    loadCurrentSession();
   }, [refreshSessions]);
-
-  const handleChunk: StreamCallback = useCallback((agentId: string, chunk: StreamChunk) => {
-    if (agentId === options.gentleConfig.id) {
-      setGentleStream(prev => ({
-        ...prev,
-        content: (prev?.content || '') + (chunk.content || ''),
-        reasoning: (prev?.reasoning || '') + (chunk.reasoning || ''),
-        done: chunk.done,
-      }));
-    } else {
-      setAngryStream(prev => ({
-        ...prev,
-        content: (prev?.content || '') + (chunk.content || ''),
-        reasoning: (prev?.reasoning || '') + (chunk.reasoning || ''),
-        done: chunk.done,
-      }));
-    }
-  }, [options.gentleConfig.id, options.angryConfig.id]);
-
-  const handleRoundComplete = useCallback((round: number, shouldEnd: boolean) => {
-    setCurrentRound(round);
-    setIsEnding(shouldEnd);
-  }, []);
 
   const runDebate = useCallback(async (question: string) => {
     if (!question.trim()) return;
@@ -108,27 +81,81 @@ export function useAgentTeam(options: UseAgentTeamOptions): UseAgentTeamReturn {
     abortControllerRef.current = new AbortController();
 
     try {
-      if (mode === 'single') {
-        await agentTeamRef.current?.runSingle(
-          question,
-          handleChunk,
-          handleRoundComplete,
-          abortControllerRef.current.signal
-        );
-      } else {
-        await agentTeamRef.current?.runDebate(
-          question,
-          handleChunk,
-          handleRoundComplete,
-          abortControllerRef.current.signal
-        );
+      // Prepare configs without apiKey for backend
+      const gentleConfigForBackend = {
+        ...options.gentleConfig,
+        apiKey: '', // Backend doesn't need apiKey
+      };
+      const angryConfigForBackend = {
+        ...options.angryConfig,
+        apiKey: '', // Backend doesn't need apiKey
+      };
+
+      const request = {
+        session_id: currentSession?.id,
+        question,
+        mode,
+        gentle_config: gentleConfigForBackend,
+        angry_config: angryConfigForBackend,
+      };
+
+      let sessionId = currentSession?.id;
+
+      for await (const event of apiClient.streamDebate(request)) {
+        if (abortControllerRef.current?.signal.aborted) {
+          break;
+        }
+
+        switch (event.type) {
+          case 'chunk':
+            if (event.agent_id === 'gentle') {
+              setGentleStream(prev => ({
+                ...prev,
+                content: (prev?.content || '') + (event.content || ''),
+                reasoning: (prev?.reasoning || '') + (event.reasoning || ''),
+                done: false,
+              }));
+            } else {
+              setAngryStream(prev => ({
+                ...prev,
+                content: (prev?.content || '') + (event.content || ''),
+                reasoning: (prev?.reasoning || '') + (event.reasoning || ''),
+                done: false,
+              }));
+            }
+            break;
+
+          case 'round_complete':
+            setCurrentRound(event.round);
+            setIsEnding(event.should_end);
+            // Mark streams as done for this round
+            if (mode === 'double') {
+              setGentleStream(prev => prev ? { ...prev, done: true } : null);
+              setAngryStream(prev => prev ? { ...prev, done: true } : null);
+            } else {
+              setGentleStream(prev => prev ? { ...prev, done: true } : null);
+            }
+            break;
+
+          case 'error':
+            throw new Error(event.message);
+
+          case 'complete':
+            sessionId = event.session_id;
+            setTotalRounds(event.total_rounds);
+            break;
+        }
       }
-      const session = debateStorage.getCurrentSession();
-      if (session) {
-        setCurrentSession(session);
-        setTotalRounds(session.rounds.length);
+
+      // Refresh session data from backend
+      if (sessionId) {
+        const session = await debateStorage.getSession(sessionId);
+        if (session) {
+          setCurrentSession(session);
+          setTotalRounds(session.rounds.length);
+        }
       }
-      refreshSessions();
+      await refreshSessions();
     } catch (err) {
       if (err instanceof Error && err.name !== 'AbortError') {
         setError(err.message);
@@ -137,24 +164,27 @@ export function useAgentTeam(options: UseAgentTeamOptions): UseAgentTeamReturn {
       setIsRunning(false);
       setIsEnding(false);
     }
-  }, [handleChunk, handleRoundComplete, mode, refreshSessions]);
+  }, [currentSession, mode, options.gentleConfig, options.angryConfig, refreshSessions]);
 
-  const loadSession = useCallback((sessionId: string) => {
-    const session = debateStorage.getSession(sessionId);
-    if (session) {
-      debateStorage.setCurrentSession(sessionId);
-      agentTeamRef.current?.loadSession(session);
-      setCurrentSession(session);
-      setMode(session.mode || 'double');
-      setTotalRounds(session.rounds.length);
-      setGentleStream(null);
-      setAngryStream(null);
-      setError(null);
+  const loadSession = useCallback(async (sessionId: string) => {
+    try {
+      const session = await debateStorage.getSession(sessionId);
+      if (session) {
+        await debateStorage.setCurrentSession(sessionId);
+        setCurrentSession(session);
+        setMode(session.mode || 'double');
+        setTotalRounds(session.rounds.length);
+        setGentleStream(null);
+        setAngryStream(null);
+        setError(null);
+      }
+    } catch (err) {
+      console.error('Failed to load session:', err);
+      setError('Failed to load session');
     }
   }, []);
 
   const createNewSession = useCallback(() => {
-    agentTeamRef.current?.reset();
     setCurrentSession(null);
     setGentleStream(null);
     setAngryStream(null);
@@ -165,31 +195,31 @@ export function useAgentTeam(options: UseAgentTeamOptions): UseAgentTeamReturn {
     debateStorage.setCurrentSession('');
   }, []);
 
-  const deleteSession = useCallback((sessionId: string) => {
-    debateStorage.deleteSession(sessionId);
-    refreshSessions();
-    if (currentSession?.id === sessionId) {
-      createNewSession();
+  const deleteSession = useCallback(async (sessionId: string) => {
+    try {
+      await debateStorage.deleteSession(sessionId);
+      await refreshSessions();
+      if (currentSession?.id === sessionId) {
+        createNewSession();
+      }
+    } catch (err) {
+      console.error('Failed to delete session:', err);
+      setError('Failed to delete session');
     }
   }, [currentSession, createNewSession, refreshSessions]);
 
   const compactContext = useCallback(() => {
-    const wasCompacted = agentTeamRef.current?.compactContext() || false;
-    if (wasCompacted) {
-      const stats = agentTeamRef.current?.getContextStats() || null;
-      setContextStats(stats);
-    }
-    return wasCompacted;
+    // Deprecated - backend handles context compression
+    console.warn('compactContext is deprecated - context is managed by the backend');
+    return false;
   }, []);
 
   const stopDebate = useCallback(() => {
     abortControllerRef.current?.abort();
-    agentTeamRef.current?.stop();
     setIsRunning(false);
   }, []);
 
   const reset = useCallback(() => {
-    agentTeamRef.current?.reset();
     setGentleStream(null);
     setAngryStream(null);
     setError(null);
@@ -206,7 +236,7 @@ export function useAgentTeam(options: UseAgentTeamOptions): UseAgentTeamReturn {
     currentRound,
     totalRounds,
     isEnding,
-    contextStats,
+    contextStats: null,
     currentSession,
     sessions,
     mode,
