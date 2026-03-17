@@ -1,5 +1,10 @@
 export { AgentTeam, type StreamCallback } from './AgentTeam';
 export {
+  AgentLoop,
+  type AgentLoopEventCallback,
+  type AgentLoopStatusCallback,
+} from './AgentLoop';
+export {
   createDefaultAgentConfig,
   validateConfig,
   GENTLE_SYSTEM_PROMPT,
