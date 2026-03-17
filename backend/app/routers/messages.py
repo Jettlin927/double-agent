@@ -16,7 +16,7 @@ from app.schemas.message import (
     SessionHistoryResponse,
 )
 
-router = APIRouter(prefix="/messages", tags=["messages"])
+router = APIRouter(tags=["messages"])
 
 
 @router.post("/iterations", response_model=IterationResponse)
@@ -33,6 +33,7 @@ async def create_iteration(
         round_number=data.round_number,
         iteration_number=data.iteration_number,
     )
+    await db.commit()
     return iteration
 
 
@@ -84,6 +85,7 @@ async def update_iteration_status(
         duration_ms=duration_ms,
         error_message=error_message,
     )
+    await db.commit()
     return {"success": True}
 
 
@@ -101,6 +103,7 @@ async def save_message(
         sequence=data.sequence,
         **data.model_dump(exclude={"item_type", "sequence"}),
     )
+    await db.commit()
     return message
 
 
@@ -116,6 +119,7 @@ async def save_messages_batch(
         iteration_id=iteration_id,
         items=[item.model_dump() for item in items],
     )
+    await db.commit()
     return {"messages": messages}
 
 
@@ -149,6 +153,7 @@ async def record_tool_call(
         arguments=data.arguments,
         sequence=data.sequence,
     )
+    await db.commit()
     return tool_call
 
 
@@ -167,6 +172,7 @@ async def complete_tool_call(
         error_message=data.error_message,
         execution_time_ms=data.execution_time_ms,
     )
+    await db.commit()
     return {"success": True}
 
 

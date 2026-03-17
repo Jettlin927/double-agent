@@ -4,8 +4,13 @@
 """
 
 from typing import Optional, List, Dict, Any, Literal
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_serializer, field_validator
 from datetime import datetime
+
+
+def serialize_datetime(dt: Optional[datetime]) -> Optional[str]:
+    """将 datetime 序列化为 ISO 格式字符串"""
+    return dt.isoformat() if dt else None
 
 
 # ============================================================
@@ -85,15 +90,15 @@ class MessageCreate(BaseModel):
     client_id: Optional[str] = None
     agent_id: Optional[str] = None
     timestamp: Optional[int] = None
-    metadata: Optional[Dict[str, Any]] = None
+    meta_data: Optional[Dict[str, Any]] = Field(default=None, alias="metadata")
 
 
 class MessageResponse(BaseModel):
     """消息响应 Schema"""
     id: int
-    type: str
+    type: str = Field(validation_alias="item_type")
     sequence: int
-    created_at: Optional[str] = None
+    created_at: Optional[datetime] = None
 
     # 根据类型的动态字段
     role: Optional[str] = None
@@ -108,10 +113,23 @@ class MessageResponse(BaseModel):
     client_id: Optional[str] = None
     agent_id: Optional[str] = None
     timestamp: Optional[int] = None
-    metadata: Optional[Dict[str, Any]] = None
+    meta_data: Optional[Dict[str, Any]] = Field(default=None, alias="metadata")
+
+    @field_serializer('created_at')
+    def serialize_created_at(self, dt: Optional[datetime]) -> Optional[str]:
+        return serialize_datetime(dt)
+
+    @field_validator('meta_data', mode='before')
+    @classmethod
+    def validate_metadata(cls, v):
+        if v is None or isinstance(v, dict):
+            return v
+        # 处理 SQLAlchemy MetaData 对象或其他非字典类型
+        return None
 
     class Config:
         from_attributes = True
+        populate_by_name = True
 
 
 # ============================================================
@@ -144,9 +162,13 @@ class ToolCallResponse(BaseModel):
     result_data: Optional[Dict[str, Any]] = None
     error_message: Optional[str] = None
     execution_time_ms: int
-    started_at: Optional[str] = None
-    completed_at: Optional[str] = None
-    metadata: Optional[Dict[str, Any]] = None
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    meta_data: Optional[Dict[str, Any]] = Field(default=None, alias="metadata")
+
+    @field_serializer('started_at', 'completed_at')
+    def serialize_datetime_fields(self, dt: Optional[datetime]) -> Optional[str]:
+        return serialize_datetime(dt)
 
     class Config:
         from_attributes = True
@@ -178,9 +200,13 @@ class IterationResponse(BaseModel):
     was_compacted: bool
     pre_compaction_message_count: Optional[int] = None
     error_message: Optional[str] = None
-    created_at: Optional[str] = None
+    created_at: Optional[datetime] = None
     message_count: int = 0
     tool_call_count: int = 0
+
+    @field_serializer('created_at')
+    def serialize_created_at(self, dt: Optional[datetime]) -> Optional[str]:
+        return serialize_datetime(dt)
 
     class Config:
         from_attributes = True

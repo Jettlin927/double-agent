@@ -220,10 +220,15 @@ class MessageStorageService:
             创建的 Message 对象列表
         """
         messages = []
-        for i, item in enumerate(items):
+        for item in items:
+            # 从 item 中提取 item_type 和 sequence
+            item_type = item.pop('item_type')
+            sequence = item.pop('sequence', 0)
+
             msg = await self.save_message(
                 iteration_id=iteration_id,
-                sequence=i,
+                item_type=item_type,
+                sequence=sequence,
                 **item,
             )
             messages.append(msg)
