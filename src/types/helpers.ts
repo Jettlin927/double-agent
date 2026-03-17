@@ -6,7 +6,6 @@
 import type {
   Message,
   InputItem,
-  OutputItem,
   MessageItem,
   ReasoningItem,
   FunctionCallItem,

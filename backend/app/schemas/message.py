@@ -3,7 +3,7 @@
 对应前端 InputItem/OutputItem 类型
 """
 
-from typing import Optional, List, Dict, Any, Literal
+from typing import Optional, List, Dict, Any, Literal, Union
 from pydantic import BaseModel, Field, field_serializer, field_validator
 from datetime import datetime
 
@@ -38,7 +38,7 @@ class InputFilePart(BaseModel):
     file_content: str
 
 
-ContentPartSchema = InputTextPart | OutputTextPart | InputImagePart | InputFilePart
+ContentPartSchema = Union[InputTextPart, OutputTextPart, InputImagePart, InputFilePart]
 
 
 # ============================================================
@@ -55,7 +55,7 @@ class SummaryImagePart(BaseModel):
     image_url: str
 
 
-SummaryPartSchema = SummaryTextPart | SummaryImagePart
+SummaryPartSchema = Union[SummaryTextPart, SummaryImagePart]
 
 
 # ============================================================

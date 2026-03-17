@@ -7,7 +7,23 @@
       "Bash(npm run:*)",
       "Bash(npx tsc:*)",
       "Bash(xargs wc:*)",
-      "Bash(git:*)"
+      "Bash(git:*)",
+      "Bash(python3:*)",
+      "Bash(python:*)",
+      "WebSearch"
+    ]
+  },
+  "hooks": {
+    "TaskCompleted": [
+      {
+        "hooks": [
+          {
+            "type": "prompt",
+            "prompt": "Task completed. Please run /check skill to perform code quality checks (TypeScript compilation, ESLint, build, Python checks, etc.).",
+            "statusMessage": "Running automated code checks..."
+          }
+        ]
+      }
     ]
   }
 }

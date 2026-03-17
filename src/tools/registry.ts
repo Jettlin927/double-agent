@@ -32,6 +32,8 @@ export class ToolRegistry {
 
   getToolsForAgent(_personality: 'gentle' | 'angry'): ToolDefinition[] {
     // 可以在这里根据Agent性格过滤工具
+    // personality 参数保留供未来扩展使用
+    void _personality;
     return this.getAllTools();
   }
 
@@ -100,6 +102,7 @@ export const toolRegistry = new ToolRegistry();
 
 // 1. WebSearch - 模拟搜索（实际实现需要接入搜索引擎API）
 const webSearchTool: ToolDefinition = {
+  type: 'function',
   name: 'web_search',
   description: '搜索网络信息，获取最新数据和事实',
   parameters: [
@@ -144,6 +147,7 @@ const webSearchHandler: ToolHandler = async (args) => {
 
 // 2. CodeExecution - 执行代码
 const codeExecutionTool: ToolDefinition = {
+  type: 'function',
   name: 'execute_code',
   description: '执行代码并返回结果，支持Python、JavaScript和Bash',
   parameters: [
@@ -190,6 +194,7 @@ const codeExecutionHandler: ToolHandler = async (args) => {
 
 // 3. AskOtherAgent - 询问另一个Agent
 const askOtherAgentTool: ToolDefinition = {
+  type: 'function',
   name: 'ask_other_agent',
   description: '向另一个Agent提问，获取对方的观点或分析',
   parameters: [
@@ -239,6 +244,7 @@ const askOtherAgentHandler: ToolHandler = async (args, context) => {
 
 // 4. Summarize - 总结对话
 const summarizeTool: ToolDefinition = {
+  type: 'function',
   name: 'summarize',
   description: '总结当前对话的要点和结论',
   parameters: [
@@ -279,6 +285,7 @@ const summarizeHandler: ToolHandler = async (args, context) => {
 
 // 5. FactCheck - 事实核查
 const factCheckTool: ToolDefinition = {
+  type: 'function',
   name: 'fact_check',
   description: '核查某个陈述的事实准确性',
   parameters: [
@@ -319,6 +326,7 @@ const factCheckHandler: ToolHandler = async (args) => {
 
 // 6. Calculate - 精确计算
 const calculateTool: ToolDefinition = {
+  type: 'function',
   name: 'calculate',
   description: '执行数学计算，返回精确结果',
   parameters: [
@@ -361,6 +369,7 @@ const calculateHandler: ToolHandler = async (args) => {
 
 // 7. Memory - 记忆存储
 const memoryTool: ToolDefinition = {
+  type: 'function',
   name: 'memory',
   description: '存储或检索对话中的重要信息',
   parameters: [
@@ -415,7 +424,7 @@ const memoryHandler: ToolHandler = async (args) => {
         executionTime: 0,
       };
 
-    case 'retrieve':
+    case 'retrieve': {
       if (!key) {
         return {
           success: false,
@@ -430,8 +439,9 @@ const memoryHandler: ToolHandler = async (args) => {
         data: item || null,
         executionTime: 0,
       };
+    }
 
-    case 'list':
+    case 'list': {
       const items = Array.from(memoryStore.entries()).map(([k, v]) => ({
         key: k,
         ...v,
@@ -443,6 +453,7 @@ const memoryHandler: ToolHandler = async (args) => {
           : items,
         executionTime: 0,
       };
+    }
 
     default:
       return {

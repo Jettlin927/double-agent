@@ -5,7 +5,13 @@ Based on frontend types from src/types/index.ts
 
 from enum import Enum
 from typing import Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
+
+
+def to_camel(string: str) -> str:
+    """将下划线命名转换为驼峰命名"""
+    parts = string.split('_')
+    return parts[0] + ''.join(word.capitalize() for word in parts[1:])
 
 
 class AgentPersonality(str, Enum):
@@ -31,17 +37,24 @@ class AgentConfig(BaseModel):
 
     Mirrors the TypeScript AgentConfig interface from src/types/index.ts
     """
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+    )
+
     id: str = Field(..., description="Unique identifier for the agent")
     name: str = Field(..., description="Display name of the agent")
     personality: AgentPersonality = Field(..., description="Agent personality type")
-    api_type: ApiType = Field(..., alias="apiType", description="API provider type")
-    base_url: str = Field(..., alias="baseURL", description="Base URL for the API")
+    api_type: ApiType = Field(..., description="API provider type")
+    base_url: str = Field(..., description="Base URL for the API")
     api_key: str = Field(..., description="API key for authentication")
     model: str = Field(..., description="Model identifier")
-    system_prompt: str = Field(..., alias="systemPrompt", description="System prompt for the agent")
+    system_prompt: str = Field(..., description="System prompt for the agent")
     temperature: float = Field(default=0.7, ge=0.0, le=2.0, description="Sampling temperature")
+    max_tokens: Optional[int] = Field(default=None, description="Maximum tokens for response")
     max_rounds: int = Field(default=10, ge=1, le=50, description="Maximum number of rounds")
 
+    # Pydantic v1 兼容配置
     class Config:
         populate_by_name = True
         json_schema_extra = {
@@ -65,16 +78,22 @@ class ModelPreset(BaseModel):
 
     Mirrors the TypeScript ModelPreset interface from src/prompts/models.ts
     """
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+    )
+
     id: str = Field(..., description="Unique identifier for the preset")
     name: str = Field(..., description="Display name of the model")
     provider: str = Field(..., description="Provider name (e.g., OpenAI, Anthropic)")
-    api_type: ApiType = Field(..., alias="apiType", description="API type")
-    base_url: str = Field(..., alias="baseURL", description="Base URL for the API")
+    api_type: ApiType = Field(..., description="API type")
+    base_url: str = Field(..., description="Base URL for the API")
     model: str = Field(..., description="Model identifier")
     description: str = Field(..., description="Model description")
     temperature: float = Field(default=0.7, description="Default temperature")
-    max_tokens: Optional[int] = Field(default=None, alias="maxTokens", description="Maximum tokens")
+    max_tokens: Optional[int] = Field(default=None, description="Maximum tokens")
 
+    # Pydantic v1 兼容配置
     class Config:
         populate_by_name = True
 
@@ -84,14 +103,20 @@ class RoleDefinition(BaseModel):
 
     Mirrors the TypeScript RoleDefinition interface from src/prompts/roles.ts
     """
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+    )
+
     id: str = Field(..., description="Unique identifier for the role")
     name: str = Field(..., description="Display name of the role")
     personality: AgentPersonality = Field(..., description="Personality type")
     description: str = Field(..., description="Role description")
-    system_prompt: str = Field(..., alias="systemPrompt", description="System prompt")
-    ending_prompt: Optional[str] = Field(default=None, alias="endingPrompt", description="Ending judgment prompt")
+    system_prompt: str = Field(..., description="System prompt")
+    ending_prompt: Optional[str] = Field(default=None, description="Ending judgment prompt")
     icon: Optional[str] = Field(default=None, description="Icon identifier")
 
+    # Pydantic v1 兼容配置
     class Config:
         populate_by_name = True
 

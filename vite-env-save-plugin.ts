@@ -12,7 +12,7 @@ export function envSavePlugin(options: EnvSavePluginOptions = {}): Plugin {
   return {
     name: 'vite-plugin-env-save',
     configureServer(server) {
-      server.middlewares.use('/api/save-env', async (req, res, _next) => {
+      server.middlewares.use('/api/save-env', async (req, res) => {
         // 只处理 POST 请求
         if (req.method !== 'POST') {
           res.statusCode = 405;

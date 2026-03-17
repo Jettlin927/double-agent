@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 from sqlalchemy import String, Integer, DateTime, Text, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -23,12 +23,12 @@ class Round(Base):
 
     # Gentle Agent 响应
     gentle_content: Mapped[str] = mapped_column(Text, nullable=False)
-    gentle_reasoning: Mapped[str | None] = mapped_column(Text, nullable=True)
+    gentle_reasoning: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     gentle_agent_id: Mapped[str] = mapped_column(String, nullable=False)
 
     # Angry Agent 响应
     angry_content: Mapped[str] = mapped_column(Text, nullable=False)
-    angry_reasoning: Mapped[str | None] = mapped_column(Text, nullable=True)
+    angry_reasoning: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     angry_agent_id: Mapped[str] = mapped_column(String, nullable=False)
 
     # 时间戳

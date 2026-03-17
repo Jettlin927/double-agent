@@ -32,7 +32,7 @@ export function extractToolCalls(content: string, agentId: string): { cleanedCon
         // 从内容中移除tool调用标记
         cleanedContent = cleanedContent.replace(match[0], '');
       }
-    } catch (error) {
+    } catch {
       // JSON解析失败，保留原始内容
       console.warn('[ToolParser] 无法解析工具调用:', jsonStr);
     }

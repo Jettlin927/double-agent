@@ -12,7 +12,7 @@ import json
 import asyncio
 import uuid
 from datetime import datetime
-from typing import AsyncGenerator, Optional
+from typing import Any, AsyncGenerator, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
@@ -202,7 +202,7 @@ async def stream_debate(
 
             # Stream events
             async for event in stream:
-                event_data = {
+                event_data: dict[str, Any] = {
                     "type": event.type,
                 }
 

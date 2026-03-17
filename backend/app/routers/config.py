@@ -6,6 +6,8 @@ Provides endpoints for retrieving:
 - Available role presets
 """
 
+from typing import Optional
+
 from fastapi import APIRouter, HTTPException, status
 
 from ..schemas.agent import (
@@ -91,7 +93,7 @@ async def get_model(preset_id: str) -> dict:
 
 @router.get("/roles")
 async def get_roles(
-    personality: AgentPersonality | None = None
+    personality: Optional[AgentPersonality] = None
 ) -> dict:
     """
     Get all available role presets.

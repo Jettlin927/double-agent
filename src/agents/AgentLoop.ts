@@ -27,13 +27,8 @@ import type {
 } from '../types';
 
 import {
-  createUserMessage,
-  createAssistantMessage,
-  createReasoning,
-  createFunctionCall,
   createFunctionCallOutput,
   extractTextContent,
-  getPendingFunctionCalls,
   estimateTokens,
   cloneInputItems,
 } from '../types/helpers';
@@ -87,7 +82,7 @@ export class AgentLoop {
     this.maxIterations = options.maxIterations ?? 10;
     this.maxTokens = options.maxTokens ?? 8000;
     this.enableStorage = options.enableStorage ?? true;
-    this.tools = options.tools ?? toolRegistry.getAllTools();
+    this.tools = options.tools ?? toolRegistry.getAllTools() ?? [];
   }
 
   // 设置回调函数
@@ -402,7 +397,6 @@ export class AgentLoop {
 
   // 构建 API 请求
   private buildRequest(): RequestInit {
-    const baseURL = this.config.baseURL.replace(/\/$/, '');
     const messages = this.inputToMessages();
 
     return {
@@ -475,11 +469,11 @@ export class AgentLoop {
     return this.tools.map((tool) => ({
       type: 'function' as const,
       function: {
-        name: tool.name,
-        description: tool.description,
+        name: tool.name ?? '',
+        description: tool.description ?? '',
         parameters: {
           type: 'object' as const,
-          properties: tool.parameters.reduce((acc, param) => {
+          properties: (tool.parameters ?? []).reduce((acc, param) => {
             acc[param.name] = {
               type: param.type,
               description: param.description,
@@ -487,7 +481,7 @@ export class AgentLoop {
             };
             return acc;
           }, {} as Record<string, unknown>),
-          required: tool.parameters.filter((p) => p.required !== false).map((p) => p.name),
+          required: (tool.parameters ?? []).filter((p) => p.required !== false).map((p) => p.name),
         },
       },
     }));

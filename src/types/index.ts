@@ -219,6 +219,9 @@ export interface StreamEvent {
   item_id?: string;
   response?: unknown;
   error?: string;
+  // function_call_arguments.delta 事件特有属性
+  name?: string;
+  call_id?: string;
 }
 
 // ============================================================

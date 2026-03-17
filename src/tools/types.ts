@@ -9,9 +9,13 @@ export interface ToolParameter {
 }
 
 export interface ToolDefinition {
+  type: 'function' | 'web_search' | 'web_search_preview';
   name: string;
   description: string;
   parameters: ToolParameter[];
+  strict?: boolean;
+  // web_search 特有属性
+  external_web_access?: boolean;
 }
 
 export interface ToolCall {
