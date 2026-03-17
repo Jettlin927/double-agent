@@ -8,6 +8,7 @@ from app.core.database import Base
 
 if TYPE_CHECKING:
     from app.models.round import Round
+    from app.models.agent_iteration import AgentIteration
 
 
 class Session(Base):
@@ -36,12 +37,20 @@ class Session(Base):
         onupdate=datetime.utcnow,
     )
 
-    # 关联关系
+    # 关联关系 - 传统轮次（向后兼容）
     rounds: Mapped[list["Round"]] = relationship(
         "Round",
         back_populates="session",
         cascade="all, delete-orphan",
         order_by="Round.round_number",
+    )
+
+    # 关联关系 - 新的 Agent Iteration（支持统一消息系统）
+    iterations: Mapped[list["AgentIteration"]] = relationship(
+        "AgentIteration",
+        back_populates="session",
+        cascade="all, delete-orphan",
+        order_by="AgentIteration.iteration_number",
     )
 
     def __repr__(self) -> str:
