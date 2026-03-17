@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete, desc
 from sqlalchemy.orm import selectinload
 
-from app.models import Session as SessionModel, AgentIteration, Message, ToolCall
+from app.models import AgentIteration, Message, ToolCall
 
 
 class MessageStorageService:

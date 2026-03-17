@@ -11,8 +11,6 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, status
 
 from ..schemas.agent import (
-    ModelPreset,
-    RoleDefinition,
     AgentPersonality,
     get_all_model_presets,
     get_presets_by_provider,

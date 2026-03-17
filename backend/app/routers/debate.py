@@ -11,7 +11,6 @@ All responses are streamed as SSE events for real-time UI updates.
 import json
 import asyncio
 import uuid
-from datetime import datetime
 from typing import Any, AsyncGenerator, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -21,16 +20,6 @@ from sqlalchemy.orm import Session
 
 from ..core.database import get_db
 from ..schemas.agent import AgentConfig, AgentMode, AgentPersonality
-from ..schemas.session import (
-    DebateSession,
-    DebateRound,
-    ChatMessage,
-    SSEChunkEvent,
-    SSERoundCompleteEvent,
-    SSEErrorEvent,
-    SSECompleteEvent,
-    SSEEventType,
-)
 from ..services.agent_team import AgentTeam, AgentConfig as AgentTeamConfig, EventType
 from ..services.llm_adapter import create_adapter
 from ..config import get_settings

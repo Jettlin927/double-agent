@@ -5,7 +5,6 @@ AgentTeam 核心逻辑模块
 提供单Agent对话和双Agent辩论的异步生成器实现
 """
 
-import asyncio
 import re
 from typing import Optional, List, Dict, Any, AsyncGenerator
 from dataclasses import dataclass, field
@@ -15,7 +14,7 @@ from enum import Enum
 from sqlalchemy.orm import Session
 
 from .context_manager import ContextManager, calculate_context_stats
-from .llm_adapter import AgentConfig as LLMAgentConfig, Message, StreamChunk
+from .llm_adapter import AgentConfig as LLMAgentConfig, Message
 
 
 class EventType(str, Enum):
@@ -253,7 +252,6 @@ class AgentTeam:
         非流式请求（用于结束判断）
         """
         import httpx
-        import json
 
         # 构建非流式请求
         llm_config = config.to_llm_config()
@@ -306,7 +304,7 @@ class AgentTeam:
         try:
             response = await self._request_non_stream(config, check_messages)
             return self._parse_ending_response(response)
-        except Exception as e:
+        except Exception:
             # 出错时默认继续，但超过安全上限会停止
             return False
 

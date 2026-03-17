@@ -3,7 +3,6 @@ Session and debate schemas for Double Agent backend.
 Based on frontend types from src/types/index.ts
 """
 
-from datetime import datetime
 from typing import Optional, Any, Union
 from pydantic import BaseModel, Field, ConfigDict
 
