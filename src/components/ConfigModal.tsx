@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { X, Settings, AlertCircle, ChevronDown, User, Bot, Sparkles, Zap, Download, FileCode, Save, Check, AlertTriangle } from 'lucide-react';
+import { X, Settings, AlertCircle, ChevronDown, User, Bot, Sparkles, Zap, Download, FileCode, Save, Check, AlertTriangle, Users, Server, Cpu } from 'lucide-react';
 import type { AgentConfig, ApiType } from '../types';
 import { GENTLE_SYSTEM_PROMPT, ANGRY_SYSTEM_PROMPT, validateConfig } from '../agents/AgentConfig';
 import {
@@ -10,6 +10,16 @@ import {
 } from '../prompts';
 import { exportToEnv, downloadEnvFile, hasEnvConfig, saveEnvToServer } from '../stores';
 
+// 三层配置系统组件
+import { ProviderConfigPanel } from './config/ProviderConfigPanel';
+import { ModelProfilePanel } from './config/ModelProfilePanel';
+import { AgentProfilePanel } from './config/AgentProfilePanel';
+import { ProviderForm } from './config/ProviderForm';
+import { ModelForm } from './config/ModelForm';
+import { AgentForm } from './config/AgentForm';
+import type { ProviderConfig, ModelProfile, AgentProfile } from '../config/types';
+import { configManager } from '../config/ConfigManager';
+
 interface ConfigModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -19,7 +29,11 @@ interface ConfigModalProps {
   onUpdateAngry: (updates: Partial<AgentConfig>) => void;
 }
 
-type TabType = 'gentle' | 'angry';
+// 标签页类型
+ type TabType = 'agents' | 'providers' | 'models' | 'quick';
+
+// 快速配置子标签
+ type QuickTabType = 'gentle' | 'angry';
 
 // Role Card Component
 function RoleCard({
@@ -318,7 +332,22 @@ export function ConfigModal({
   onUpdateGentle,
   onUpdateAngry,
 }: ConfigModalProps) {
-  const [activeTab, setActiveTab] = useState<TabType>('gentle');
+  // 主标签页状态
+  const [activeTab, setActiveTab] = useState<TabType>('agents');
+
+  // 快速配置子标签状态
+  const [activeQuickTab, setActiveQuickTab] = useState<QuickTabType>('gentle');
+
+  // 表单显示状态
+  const [showProviderForm, setShowProviderForm] = useState(false);
+  const [showModelForm, setShowModelForm] = useState(false);
+  const [showAgentForm, setShowAgentForm] = useState(false);
+
+  // 编辑状态
+  const [editingProvider, setEditingProvider] = useState<ProviderConfig | undefined>();
+  const [editingModel, setEditingModel] = useState<ModelProfile | undefined>();
+  const [editingAgent, setEditingAgent] = useState<AgentProfile | undefined>();
+
   const usingEnvConfig = hasEnvConfig();
 
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle');
@@ -348,15 +377,167 @@ export function ConfigModal({
     }, 3000);
   };
 
+  // Provider 表单处理
+  const handleAddProvider = () => {
+    setEditingProvider(undefined);
+    setShowProviderForm(true);
+  };
+
+  const handleEditProvider = (provider: ProviderConfig) => {
+    setEditingProvider(provider);
+    setShowProviderForm(true);
+  };
+
+  const handleSaveProvider = (provider: ProviderConfig) => {
+    configManager.addProvider(provider);
+    setShowProviderForm(false);
+  };
+
+  // Model 表单处理
+  const handleAddModel = () => {
+    setEditingModel(undefined);
+    setShowModelForm(true);
+  };
+
+  const handleEditModel = (model: ModelProfile) => {
+    setEditingModel(model);
+    setShowModelForm(true);
+  };
+
+  const handleSaveModel = (model: ModelProfile) => {
+    configManager.addModelProfile(model);
+    setShowModelForm(false);
+  };
+
+  // Agent 表单处理
+  const handleAddAgent = () => {
+    setEditingAgent(undefined);
+    setShowAgentForm(true);
+  };
+
+  const handleEditAgent = (agent: AgentProfile) => {
+    setEditingAgent(agent);
+    setShowAgentForm(true);
+  };
+
+  const handleSaveAgent = (agent: AgentProfile) => {
+    configManager.addAgentProfile(agent);
+    setShowAgentForm(false);
+  };
+
+  // 标签页内容渲染
+  const renderTabContent = () => {
+    // 表单显示时优先渲染表单
+    if (showProviderForm) {
+      return (
+        <ProviderForm
+          provider={editingProvider}
+          onSave={handleSaveProvider}
+          onCancel={() => setShowProviderForm(false)}
+        />
+      );
+    }
+
+    if (showModelForm) {
+      return (
+        <ModelForm
+          model={editingModel}
+          onSave={handleSaveModel}
+          onCancel={() => setShowModelForm(false)}
+        />
+      );
+    }
+
+    if (showAgentForm) {
+      return (
+        <AgentForm
+          agent={editingAgent}
+          onSave={handleSaveAgent}
+          onCancel={() => setShowAgentForm(false)}
+        />
+      );
+    }
+
+    // 根据当前标签页渲染对应内容
+    switch (activeTab) {
+      case 'agents':
+        return (
+          <AgentProfilePanel
+            onEditAgent={handleEditAgent}
+            onAddAgent={handleAddAgent}
+          />
+        );
+      case 'providers':
+        return (
+          <ProviderConfigPanel
+            onEditProvider={handleEditProvider}
+            onAddProvider={handleAddProvider}
+          />
+        );
+      case 'models':
+        return (
+          <ModelProfilePanel
+            onEditModel={handleEditModel}
+            onAddModel={handleAddModel}
+          />
+        );
+      case 'quick':
+        return (
+          <div className="space-y-4">
+            {/* 快速配置子标签 */}
+            <div className="flex border-b border-gray-200">
+              <button
+                onClick={() => setActiveQuickTab('gentle')}
+                className={`flex-1 px-4 py-2 text-sm font-medium transition-colors ${
+                  activeQuickTab === 'gentle'
+                    ? 'text-amber-600 border-b-2 border-amber-500 bg-amber-50/30'
+                    : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50'
+                }`}
+              >
+                <span className="flex items-center justify-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+                  温和 Agent
+                </span>
+              </button>
+              <button
+                onClick={() => setActiveQuickTab('angry')}
+                className={`flex-1 px-4 py-2 text-sm font-medium transition-colors ${
+                  activeQuickTab === 'angry'
+                    ? 'text-rose-600 border-b-2 border-rose-500 bg-rose-50/30'
+                    : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50'
+                }`}
+              >
+                <span className="flex items-center justify-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-rose-500"></span>
+                  暴躁 Agent
+                </span>
+              </button>
+            </div>
+            {/* 快速配置内容 */}
+            <div className="pt-2">
+              {activeQuickTab === 'gentle' ? (
+                <ConfigForm config={gentleConfig} onUpdate={onUpdateGentle} />
+              ) : (
+                <ConfigForm config={angryConfig} onUpdate={onUpdateAngry} />
+              )}
+            </div>
+          </div>
+        );
+      default:
+        return null;
+    }
+  };
+
   if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="w-full max-w-2xl max-h-[90vh] bg-white rounded-2xl shadow-2xl overflow-hidden animate-fade-in">
+      <div className="w-full max-w-3xl max-h-[90vh] bg-white rounded-2xl shadow-2xl overflow-hidden animate-fade-in">
+        {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
           <div className="flex items-center gap-2">
             <Settings className="w-5 h-5 text-gray-600" />
-            <h2 className="text-lg font-semibold text-gray-900">Agent 配置</h2>
+            <h2 className="text-lg font-semibold text-gray-900">配置管理</h2>
           </div>
           <button
             onClick={onClose}
@@ -366,43 +547,75 @@ export function ConfigModal({
           </button>
         </div>
 
+        {/* 主标签页导航 */}
         <div className="flex border-b border-gray-200">
+          {/* Agent 配置 */}
           <button
-            onClick={() => setActiveTab('gentle')}
-            className={`flex-1 px-6 py-3 text-sm font-medium transition-colors ${
-              activeTab === 'gentle'
-                ? 'text-amber-600 border-b-2 border-amber-500 bg-amber-50/50'
+            onClick={() => setActiveTab('agents')}
+            className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
+              activeTab === 'agents'
+                ? 'text-blue-600 border-b-2 border-blue-500 bg-blue-50/50'
                 : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50'
             }`}
           >
             <span className="flex items-center justify-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-amber-500"></span>
-              温和 Agent
+              <Users className="w-4 h-4" />
+              Agent 配置
             </span>
           </button>
+
+          {/* Provider 管理 */}
           <button
-            onClick={() => setActiveTab('angry')}
-            className={`flex-1 px-6 py-3 text-sm font-medium transition-colors ${
-              activeTab === 'angry'
-                ? 'text-rose-600 border-b-2 border-rose-500 bg-rose-50/50'
+            onClick={() => setActiveTab('providers')}
+            className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
+              activeTab === 'providers'
+                ? 'text-purple-600 border-b-2 border-purple-500 bg-purple-50/50'
                 : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50'
             }`}
           >
             <span className="flex items-center justify-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-rose-500"></span>
-              暴躁 Agent
+              <Server className="w-4 h-4" />
+              Provider 管理
+            </span>
+          </button>
+
+          {/* Model 管理 */}
+          <button
+            onClick={() => setActiveTab('models')}
+            className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
+              activeTab === 'models'
+                ? 'text-green-600 border-b-2 border-green-500 bg-green-50/50'
+                : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50'
+            }`}
+          >
+            <span className="flex items-center justify-center gap-2">
+              <Cpu className="w-4 h-4" />
+              Model 管理
+            </span>
+          </button>
+
+          {/* 快速配置 */}
+          <button
+            onClick={() => setActiveTab('quick')}
+            className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
+              activeTab === 'quick'
+                ? 'text-orange-600 border-b-2 border-orange-500 bg-orange-50/50'
+                : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50'
+            }`}
+          >
+            <span className="flex items-center justify-center gap-2">
+              <Zap className="w-4 h-4" />
+              快速配置
             </span>
           </button>
         </div>
 
+        {/* 内容区域 */}
         <div className="p-6 overflow-y-auto max-h-[60vh]">
-          {activeTab === 'gentle' ? (
-            <ConfigForm config={gentleConfig} onUpdate={onUpdateGentle} />
-          ) : (
-            <ConfigForm config={angryConfig} onUpdate={onUpdateAngry} />
-          )}
+          {renderTabContent()}
         </div>
 
+        {/* Footer */}
         <div className="flex items-center justify-between px-6 py-4 border-t border-gray-200 bg-gray-50">
           {/* Left side: Env config indicator, save and export buttons */}
           <div className="flex items-center gap-3">
